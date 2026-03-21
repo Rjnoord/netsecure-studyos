@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "NetSecure StudyOS",
+    "slug": "netsecure-studyos",
+    "scheme": "netsecure-studyos",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {},
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

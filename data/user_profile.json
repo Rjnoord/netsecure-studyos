@@ -1,0 +1,570 @@
+{
+  "name": "Student",
+  "exam_readiness": {
+    "CCNA": 40.2,
+    "AZ-900": 40.2,
+    "AZ-800": 44.2,
+    "Security+": 40.2,
+    "Network+": 40.2,
+    "Tech+": 40.2,
+    "A+": 40.2,
+    "Linux+": 40.2,
+    "Cloud+": 40.2,
+    "Server+": 40.2,
+    "Project+": 40.2,
+    "Cloud Essentials+": 40.2,
+    "CySA+": 40.2,
+    "PenTest+": 40.2,
+    "SecurityX": 40.2,
+    "Data+": 40.2,
+    "DataSys+": 40.2,
+    "DataX": 40.2,
+    "CloudNetX": 40.2,
+    "AWS Cloud Practitioner": 40.2,
+    "AWS AI Practitioner": 40.2,
+    "AWS Solutions Architect Associate": 40.2,
+    "AWS Developer Associate": 40.2,
+    "AWS CloudOps Engineer Associate": 40.2,
+    "AWS Data Engineer Associate": 40.2,
+    "AWS Machine Learning Engineer Associate": 40.2,
+    "AWS Solutions Architect Professional": 40.2,
+    "AWS DevOps Engineer Professional": 40.2,
+    "AWS Generative AI Developer Professional": 40.2,
+    "AWS Advanced Networking Specialty": 40.2,
+    "AWS Security Specialty": 40.2,
+    "AWS Machine Learning Specialty": 40.2,
+    "AI-900": 40.2,
+    "DP-900": 40.2,
+    "SC-900": 40.2,
+    "AZ-104": 40.2,
+    "AZ-204": 40.2,
+    "AZ-305": 40.2,
+    "AZ-400": 40.2,
+    "AZ-500": 40.2,
+    "AZ-700": 40.2,
+    "Windows Server Hybrid Administrator Associate": 40.2,
+    "Azure AI Engineer Associate": 40.2,
+    "Azure Data Engineer Associate": 40.2,
+    "Azure Database Administrator Associate": 40.2,
+    "Azure Data Scientist Associate": 40.2,
+    "Azure Virtual Desktop Specialty": 40.2,
+    "Azure Network Engineer Associate": 40.2,
+    "Azure Security Engineer Associate": 40.2,
+    "CCST Networking": 40.2,
+    "CCST Cybersecurity": 40.2,
+    "CCST IT Support": 40.2,
+    "CCT Field Technician": 40.2,
+    "CCNA Automation": 40.2,
+    "CyberOps Associate": 40.2,
+    "CCNP Enterprise": 40.2,
+    "CCNP Security": 40.2,
+    "CCNP Data Center": 40.2,
+    "CCNP Collaboration": 40.2,
+    "CCNP Service Provider": 40.2,
+    "CCNP Automation": 40.2,
+    "CCIE Enterprise Infrastructure": 40.2,
+    "CCIE Enterprise Wireless": 40.2,
+    "CCIE Security": 40.2,
+    "CCIE Data Center": 40.2,
+    "CCIE Collaboration": 40.2,
+    "CCIE Service Provider": 40.2,
+    "CCIE Automation": 40.2,
+    "CCDE": 40.2
+  },
+  "updated_at": "2026-03-21T19:01:21.963067",
+  "onboarding_complete": true,
+  "target_exam": "AZ-800",
+  "target_date": "2026-08-12",
+  "weekly_study_hours": 7,
+  "domain_self_ratings": {
+    "CCNA": {
+      "Network Fundamentals": 3,
+      "Network Access": 3,
+      "IP Connectivity": 3,
+      "IP Services": 3,
+      "Security Fundamentals": 3,
+      "Automation & Programmability": 3
+    },
+    "AZ-900": {
+      "Cloud Concepts": 3,
+      "Core Azure Services": 3,
+      "Azure Management & Governance": 3,
+      "Identity & Security": 3
+    },
+    "AZ-800": {
+      "Hybrid Identity": 3,
+      "Windows Server Administration": 3,
+      "Active Directory": 3,
+      "File & Storage": 3,
+      "Networking": 3,
+      "Security": 3,
+      "Monitoring & Recovery": 3
+    },
+    "Security+": {
+      "General Security Concepts": 3,
+      "Threats & Vulnerabilities": 3,
+      "Security Architecture": 3,
+      "Security Operations": 3,
+      "Governance & Risk": 3
+    },
+    "Network+": {
+      "Networking Concepts": 3,
+      "Network Implementation": 3,
+      "Network Operations": 3,
+      "Network Security": 3,
+      "Troubleshooting": 3
+    },
+    "Tech+": {
+      "Core IT Concepts": 3,
+      "Devices & Connectivity": 3,
+      "Apps & Software": 3,
+      "Security Basics": 3
+    },
+    "A+": {
+      "Hardware": 3,
+      "Operating Systems": 3,
+      "Networking": 3,
+      "Security": 3,
+      "Troubleshooting": 3
+    },
+    "Linux+": {
+      "System Management": 3,
+      "Security": 3,
+      "Scripting & Automation": 3,
+      "Troubleshooting": 3,
+      "Networking & Services": 3
+    },
+    "Cloud+": {
+      "Cloud Architecture": 3,
+      "Deployment": 3,
+      "Operations": 3,
+      "Security": 3,
+      "Troubleshooting": 3
+    },
+    "Server+": {
+      "Server Hardware": 3,
+      "Administration": 3,
+      "Storage": 3,
+      "Security": 3,
+      "Troubleshooting & DR": 3
+    },
+    "Project+": {
+      "Project Concepts": 3,
+      "Planning": 3,
+      "Execution": 3,
+      "Communication": 3,
+      "Risk & Compliance": 3
+    },
+    "Cloud Essentials+": {
+      "Cloud Principles": 3,
+      "Business Value": 3,
+      "Governance & Risk": 3,
+      "Management": 3,
+      "Operations": 3
+    },
+    "CySA+": {
+      "Security Operations": 3,
+      "Vulnerability Management": 3,
+      "Incident Response": 3,
+      "Threat Intelligence": 3,
+      "Reporting & Communication": 3
+    },
+    "PenTest+": {
+      "Planning & Scoping": 3,
+      "Reconnaissance": 3,
+      "Exploitation": 3,
+      "Reporting": 3,
+      "Compliance & Safety": 3
+    },
+    "SecurityX": {
+      "Enterprise Security Architecture": 3,
+      "Risk & Governance": 3,
+      "Research & Collaboration": 3,
+      "Integration": 3,
+      "Advanced Operations": 3
+    },
+    "Data+": {
+      "Data Concepts": 3,
+      "Data Mining": 3,
+      "Visualization": 3,
+      "Governance": 3,
+      "Analytics": 3
+    },
+    "DataSys+": {
+      "Database Design": 3,
+      "Deployment": 3,
+      "Administration": 3,
+      "Security": 3,
+      "Troubleshooting": 3
+    },
+    "DataX": {
+      "Data Science Lifecycle": 3,
+      "Model Development": 3,
+      "Evaluation": 3,
+      "Deployment": 3,
+      "Governance": 3
+    },
+    "CloudNetX": {
+      "Cloud Networking": 3,
+      "Architecture": 3,
+      "Security": 3,
+      "Operations": 3,
+      "Optimization": 3
+    },
+    "AWS Cloud Practitioner": {
+      "Cloud Concepts": 3,
+      "Security & Compliance": 3,
+      "Technology": 3,
+      "Billing & Pricing": 3
+    },
+    "AWS AI Practitioner": {
+      "AI/ML Concepts": 3,
+      "Generative AI": 3,
+      "Responsible AI": 3,
+      "AWS AI Services": 3
+    },
+    "AWS Solutions Architect Associate": {
+      "Secure Architectures": 3,
+      "Resilient Architectures": 3,
+      "High-Performance Architectures": 3,
+      "Cost-Optimized Architectures": 3
+    },
+    "AWS Developer Associate": {
+      "Development with AWS Services": 3,
+      "Security": 3,
+      "Deployment": 3,
+      "Troubleshooting & Optimization": 3
+    },
+    "AWS CloudOps Engineer Associate": {
+      "Monitoring & Operations": 3,
+      "Reliability": 3,
+      "Security & Compliance": 3,
+      "Networking & Content Delivery": 3,
+      "Cost & Performance": 3
+    },
+    "AWS Data Engineer Associate": {
+      "Data Ingestion": 3,
+      "Storage": 3,
+      "Transformation": 3,
+      "Orchestration": 3,
+      "Security & Governance": 3
+    },
+    "AWS Machine Learning Engineer Associate": {
+      "ML Data Preparation": 3,
+      "Model Development": 3,
+      "Deployment": 3,
+      "Operations": 3,
+      "Monitoring": 3
+    },
+    "AWS Solutions Architect Professional": {
+      "Complex Architecture Design": 3,
+      "Migration": 3,
+      "Cost Control": 3,
+      "Governance": 3,
+      "Hybrid Strategy": 3
+    },
+    "AWS DevOps Engineer Professional": {
+      "SDLC Automation": 3,
+      "Configuration Management": 3,
+      "Observability": 3,
+      "Incident Response": 3,
+      "Security & Compliance": 3
+    },
+    "AWS Generative AI Developer Professional": {
+      "Foundation Models": 3,
+      "Prompt Engineering": 3,
+      "Application Integration": 3,
+      "Security & Governance": 3,
+      "Evaluation & Operations": 3
+    },
+    "AWS Advanced Networking Specialty": {
+      "Network Design": 3,
+      "Hybrid Connectivity": 3,
+      "Network Security": 3,
+      "Automation": 3,
+      "Troubleshooting": 3
+    },
+    "AWS Security Specialty": {
+      "Identity & Access": 3,
+      "Detection": 3,
+      "Infrastructure Security": 3,
+      "Data Protection": 3,
+      "Incident Response": 3
+    },
+    "AWS Machine Learning Specialty": {
+      "ML Engineering": 3,
+      "Modeling": 3,
+      "Deployment": 3,
+      "Operations": 3,
+      "Governance": 3
+    },
+    "AI-900": {
+      "AI Workloads": 3,
+      "Machine Learning": 3,
+      "Computer Vision": 3,
+      "NLP & Generative AI": 3
+    },
+    "DP-900": {
+      "Core Data Concepts": 3,
+      "Relational Data": 3,
+      "Non-Relational Data": 3,
+      "Analytics": 3
+    },
+    "SC-900": {
+      "Identity Concepts": 3,
+      "Security Concepts": 3,
+      "Compliance": 3,
+      "Microsoft Security Solutions": 3
+    },
+    "AZ-104": {
+      "Identity": 3,
+      "Storage": 3,
+      "Compute": 3,
+      "Networking": 3,
+      "Monitoring & Governance": 3
+    },
+    "AZ-204": {
+      "App Services": 3,
+      "Functions & Containers": 3,
+      "Storage": 3,
+      "Security": 3,
+      "Monitoring": 3
+    },
+    "AZ-305": {
+      "Architecture Design": 3,
+      "Identity & Security": 3,
+      "Data Storage": 3,
+      "Business Continuity": 3,
+      "Governance": 3
+    },
+    "AZ-400": {
+      "Source Control": 3,
+      "CI/CD": 3,
+      "Infrastructure as Code": 3,
+      "Observability": 3,
+      "Security & Compliance": 3
+    },
+    "AZ-500": {
+      "Identity Security": 3,
+      "Platform Protection": 3,
+      "Security Operations": 3,
+      "Data & Application Security": 3
+    },
+    "AZ-700": {
+      "Network Design": 3,
+      "Hybrid Connectivity": 3,
+      "Private Access": 3,
+      "Load Balancing": 3,
+      "Monitoring": 3
+    },
+    "Windows Server Hybrid Administrator Associate": {
+      "Hybrid Server Deployment": 3,
+      "Identity": 3,
+      "Administration": 3,
+      "Networking": 3,
+      "Recovery": 3
+    },
+    "Azure AI Engineer Associate": {
+      "Plan AI Solutions": 3,
+      "Computer Vision": 3,
+      "NLP": 3,
+      "Knowledge Mining": 3,
+      "Generative AI": 3
+    },
+    "Azure Data Engineer Associate": {
+      "Data Storage": 3,
+      "Data Processing": 3,
+      "Security": 3,
+      "Monitoring": 3,
+      "Optimization": 3
+    },
+    "Azure Database Administrator Associate": {
+      "Deployment": 3,
+      "Configuration": 3,
+      "Security": 3,
+      "Monitoring": 3,
+      "Optimization": 3
+    },
+    "Azure Data Scientist Associate": {
+      "Data Prep": 3,
+      "Model Training": 3,
+      "Experimentation": 3,
+      "Deployment": 3,
+      "Monitoring": 3
+    },
+    "Azure Virtual Desktop Specialty": {
+      "Identity & Access": 3,
+      "Host Pools": 3,
+      "Images & Apps": 3,
+      "Monitoring": 3,
+      "Security": 3
+    },
+    "Azure Network Engineer Associate": {
+      "Hybrid Networking": 3,
+      "Private Access": 3,
+      "Traffic Distribution": 3,
+      "Security": 3,
+      "Observability": 3
+    },
+    "Azure Security Engineer Associate": {
+      "Identity Protection": 3,
+      "Platform Security": 3,
+      "Defender for Cloud": 3,
+      "Data Security": 3,
+      "Incident Response": 3
+    },
+    "CCST Networking": {
+      "Network Basics": 3,
+      "Connectivity": 3,
+      "IP Services": 3,
+      "Security Basics": 3,
+      "Troubleshooting": 3
+    },
+    "CCST Cybersecurity": {
+      "Threats": 3,
+      "Access Control": 3,
+      "Security Monitoring": 3,
+      "Networking Basics": 3,
+      "Incident Response": 3
+    },
+    "CCST IT Support": {
+      "Devices": 3,
+      "OS Support": 3,
+      "Networking": 3,
+      "Security": 3,
+      "Troubleshooting": 3
+    },
+    "CCT Field Technician": {
+      "Hardware": 3,
+      "Diagnostics": 3,
+      "Replacement Procedures": 3,
+      "Safety": 3,
+      "Documentation": 3
+    },
+    "CCNA Automation": {
+      "Programming Basics": 3,
+      "APIs": 3,
+      "Automation Workflows": 3,
+      "Data Formats": 3,
+      "Security": 3,
+      "Operations": 3
+    },
+    "CyberOps Associate": {
+      "Security Concepts": 3,
+      "Monitoring": 3,
+      "Host-Based Analysis": 3,
+      "Network Intrusion Analysis": 3,
+      "Incident Response": 3
+    },
+    "CCNP Enterprise": {
+      "Enterprise Core": 3,
+      "Advanced Routing": 3,
+      "SD-WAN": 3,
+      "Wireless": 3,
+      "Automation": 3
+    },
+    "CCNP Security": {
+      "Secure Access": 3,
+      "Firewalling": 3,
+      "Email/Web Security": 3,
+      "VPN": 3,
+      "Automation": 3
+    },
+    "CCNP Data Center": {
+      "Data Center Core": 3,
+      "Networking": 3,
+      "Compute": 3,
+      "Storage": 3,
+      "Automation": 3
+    },
+    "CCNP Collaboration": {
+      "Call Control": 3,
+      "Endpoints": 3,
+      "QoS": 3,
+      "Collaboration Apps": 3,
+      "Automation": 3
+    },
+    "CCNP Service Provider": {
+      "SP Core": 3,
+      "Routing": 3,
+      "Services": 3,
+      "Automation": 3,
+      "Assurance": 3
+    },
+    "CCNP Automation": {
+      "Software Design": 3,
+      "APIs": 3,
+      "Automation Pipelines": 3,
+      "Security": 3,
+      "Observability": 3
+    },
+    "CCIE Enterprise Infrastructure": {
+      "Advanced Routing": 3,
+      "Enterprise Design": 3,
+      "Segmentation": 3,
+      "Services": 3,
+      "Automation": 3
+    },
+    "CCIE Enterprise Wireless": {
+      "Wireless Design": 3,
+      "RF Concepts": 3,
+      "Security": 3,
+      "Operations": 3,
+      "Troubleshooting": 3
+    },
+    "CCIE Security": {
+      "Zero Trust": 3,
+      "Perimeter Security": 3,
+      "Identity": 3,
+      "Detection & Response": 3,
+      "Automation": 3
+    },
+    "CCIE Data Center": {
+      "Fabric Design": 3,
+      "Compute": 3,
+      "Storage": 3,
+      "Virtualization": 3,
+      "Automation": 3
+    },
+    "CCIE Collaboration": {
+      "Voice": 3,
+      "Video": 3,
+      "QoS": 3,
+      "UC Applications": 3,
+      "Automation": 3
+    },
+    "CCIE Service Provider": {
+      "Carrier Routing": 3,
+      "MPLS": 3,
+      "Services": 3,
+      "Automation": 3,
+      "Operations": 3
+    },
+    "CCIE Automation": {
+      "Application Design": 3,
+      "APIs": 3,
+      "Automation Pipelines": 3,
+      "Security": 3,
+      "Observability": 3
+    },
+    "CCDE": {
+      "Network Design": 3,
+      "Business Requirements": 3,
+      "Architecture Tradeoffs": 3,
+      "Scalability": 3,
+      "Operations": 3
+    }
+  },
+  "lab_progress": {},
+  "auth": {
+    "passcode_hash": "5bbe8f932cc917aa0f5f66487890b6e4722b58568db87991c03cc4e10aabc5e2",
+    "passcode_salt": "df163e59a013cc0d7aa7d3fbdaf4daeb",
+    "failed_attempts": 0,
+    "lockout_until": null,
+    "updated_at": "2026-03-21T19:00:09.541503"
+  },
+  "links": {
+    "public_app_url": null,
+    "mobile_app_url": null
+  }
+}

@@ -1,0 +1,7 @@
+tunnel: your-tunnel-id
+credentials-file: /absolute/path/to/your-tunnel-id.json
+
+ingress:
+  - hostname: app.yourdomain.com
+    service: http://localhost:8501
+  - service: http_status:404
