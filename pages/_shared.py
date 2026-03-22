@@ -9,8 +9,9 @@ import plotly.express as px
 import streamlit as st
 
 from exams import EXAM_DOMAINS
-from question_engine import award_quiz_xp, evaluate_submission
+from question_engine import award_quiz_xp, evaluate_submission, get_ai_tutor_explanation
 from storage import (
+    add_xp,
     delete_active_session,
     is_file_persistence_enabled,
     load_results,
@@ -184,6 +185,36 @@ def _render_result_review(result: dict, show_exam_breakdown: bool) -> None:
             st.write(f"Your answer: {item['selected_answer'] or 'No answer selected'}")
             st.write(f"Correct answer: {item['correct_answer']}")
             st.write(item["explanation"])
+
+            if not item["is_correct"]:
+                tutor_cache_key = f"tutor_{item['id']}"
+                tutor_xp_key = f"tutor_xp_{item['id']}"
+                if tutor_cache_key in st.session_state:
+                    explanation = st.session_state[tutor_cache_key]
+                    if explanation is None:
+                        st.warning("AI Tutor is temporarily unavailable. Check that ANTHROPIC_API_KEY is set and try again.")
+                    else:
+                        st.markdown("#### 🧠 AI Tutor")
+                        st.markdown(f"**Step 1 — Why the correct answer is right:**\n\n{explanation['step1']}")
+                        st.markdown(f"**Step 2 — Why your answer was wrong:**\n\n{explanation['step2']}")
+                        st.markdown(f"**Step 3 — How to tell them apart:**\n\n{explanation['step3']}")
+                        st.info(f"💡 Memory tip: {explanation['memory_tip']}")
+                        st.markdown(f"**Follow-up question:** {explanation['follow_up']}")
+                else:
+                    if st.button("🧠 Get AI Explanation", key=f"tutor_btn_{item['id']}"):
+                        with st.spinner("AI Tutor is thinking..."):
+                            explanation = get_ai_tutor_explanation(
+                                question=item,
+                                selected_answer=item["selected_answer"],
+                                correct_answer=item["correct_answer"],
+                                domain=item["domain"],
+                                topic=item["topic"],
+                            )
+                        st.session_state[tutor_cache_key] = explanation
+                        if not st.session_state.get(tutor_xp_key):
+                            add_xp(5, "Opened AI Tutor")
+                            st.session_state[tutor_xp_key] = True
+                        st.rerun()
 
 
 def _render_quiz_form(quiz_key: str, result_key: str, title: str, save_mode: str, show_exam_breakdown: bool) -> None:

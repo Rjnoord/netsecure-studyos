@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 import socket
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import streamlit as st
 
 from auth import hash_passcode, is_locked_until, lockout_expiry_iso, passcode_feedback, verify_passcode

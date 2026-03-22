@@ -164,6 +164,59 @@ def award_quiz_xp(
     return {"xp_earned": xp_earned, "badges_earned": badges_earned}
 
 
+def get_ai_tutor_explanation(
+    question: dict,
+    selected_answer: str | None,
+    correct_answer: str,
+    domain: str,
+    topic: str,
+    weak_topics: list[str] | None = None,
+) -> dict | None:
+    """Call Claude to generate a step-by-step explanation for a wrong answer.
+
+    Returns a dict with keys: step1, step2, step3, memory_tip, follow_up.
+    Returns None on any error so the caller can show a fallback message.
+    """
+    try:
+        import json as _json
+
+        import anthropic
+
+        client = anthropic.Anthropic()
+
+        context_parts = [
+            f"Domain: {domain}",
+            f"Topic: {topic}",
+            f"Question: {question['stem']}",
+            f"Correct answer: {correct_answer}",
+            f"Student selected: {selected_answer or 'No answer selected'}",
+        ]
+        if weak_topics:
+            context_parts.append(f"Student's known weak topics: {', '.join(weak_topics[:5])}")
+        context = "\n".join(context_parts)
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system=(
+                "You are an expert IT certification tutor. "
+                "Respond ONLY with a JSON object with exactly these keys:\n"
+                "- step1: What the correct answer means and why it is right (2-3 sentences)\n"
+                "- step2: Why the wrong answer was tempting but incorrect; if no answer was selected, explain the most common misconception (1-2 sentences)\n"
+                "- step3: How to distinguish this concept from similar ones going forward (1-2 sentences)\n"
+                "- memory_tip: A memorable mnemonic, acronym, or mental model (1 sentence)\n"
+                "- follow_up: A follow-up question that tests deeper understanding (1 sentence ending with ?)\n"
+                "Output only valid JSON with no markdown fences or extra text."
+            ),
+            messages=[{"role": "user", "content": context}],
+        )
+
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        return _json.loads(text)
+    except Exception:
+        return None
+
+
 def evaluate_submission(questions: list[dict], answers: dict[str, str | None]) -> dict:
     review = []
     domain_stats = {}

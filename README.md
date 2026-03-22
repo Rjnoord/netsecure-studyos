@@ -44,6 +44,7 @@ NetSecure StudyOS helps users prepare for technical certifications with an AI-in
 - **Backend / App Logic:** Python
 - **Web App:** Streamlit
 - **Mobile App:** React Native with Expo
+- **AI Tutor:** Claude API (`claude-sonnet-4-6`) via the Anthropic Python SDK
 - **Version Control / Collaboration:** GitHub
 - **Deployment:** Cloud-hosted Streamlit workflow, Cloudflare tunnel support, Expo EAS mobile builds
 - **Data / Analytics:** Pandas, Plotly, local JSON + CSV exports
@@ -80,13 +81,21 @@ This architecture reflects a practical engineering tradeoff: prioritize operatio
 pip install -r requirements.txt
 ```
 
-3. Start the Streamlit app:
+3. Configure environment variables:
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and replace `your_api_key_here` with your [Anthropic API key](https://console.anthropic.com/). This enables the AI Tutor feature. The app runs without it — AI Tutor panels will show a fallback message if the key is missing or invalid.
+
+4. Start the Streamlit app:
 
 ```bash
 streamlit run app.py
 ```
 
-4. Open the app at `http://localhost:8501`
+5. Open the app at `http://localhost:8501`
 
 ### Mobile App
 

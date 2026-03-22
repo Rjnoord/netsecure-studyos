@@ -236,6 +236,60 @@ def get_home_labs(exam: str) -> list[dict]:
     ]
 
 
+def grade_lab_with_ai(
+    lab: dict,
+    exam: str,
+    completion_note: str,
+) -> dict | None:
+    """Call Claude to grade a lab completion note.
+
+    Returns a dict with keys:
+        score, strengths, improvements, understanding_verified,
+        personalized_bullets, badge_earned
+    Returns None on any error so callers can fall back to static bullets.
+    """
+    try:
+        import json as _json
+
+        import anthropic
+
+        client = anthropic.Anthropic()
+
+        steps_text = "\n".join(
+            f"  {i + 1}. {step}" for i, step in enumerate(lab["steps"])
+        )
+        prompt = (
+            f"Lab Title: {lab['title']}\n"
+            f"Certification Exam: {exam}\n"
+            f"Lab Steps:\n{steps_text}\n\n"
+            f"Student's Completion Note:\n{completion_note}"
+        )
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system=(
+                "You are an expert IT certification lab grader. "
+                "Grade the student's completion note and respond ONLY with a JSON object with exactly these keys:\n"
+                "- score: integer 1-10 reflecting how well the note demonstrates hands-on understanding\n"
+                "- strengths: list of exactly 3 specific things the student did well, grounded in their note\n"
+                "- improvements: list of exactly 2 specific suggestions to deepen their understanding\n"
+                "- understanding_verified: true if the note shows genuine hands-on work, false otherwise\n"
+                "- personalized_bullets: list of exactly 2 ATS-optimized resume bullets written from what the student described — specific to their actions and evidence, not generic\n"
+                "- badge_earned: true if score is 8 or higher, false otherwise\n"
+                "Output only valid JSON with no markdown fences or extra text."
+            ),
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        grade = _json.loads(text)
+        grade["badge_earned"] = int(grade.get("score", 0)) >= 8
+        return grade
+    except Exception:
+        return None
+
+
 def lab_note_feedback(note: str) -> list[str]:
     cleaned = note.strip()
     checks = []
