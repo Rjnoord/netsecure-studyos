@@ -47,10 +47,6 @@ _NODES: list[dict] = [
     {"id": "az305",            "label": "AZ-305",                     "exam_id": "AZ-305",                           "x": 4,    "y": 2.5,  "paths": ["Cloud"]},
     {"id": "az500",            "label": "AZ-500",                     "exam_id": "AZ-500",                           "x": 2,    "y": 1.5,  "paths": ["Cloud"]},
     {"id": "sc100",            "label": "SC-100",                     "exam_id": None,                               "x": 4,    "y": 1.5,  "paths": ["Cloud"]},
-    # ── CLOUD — GCP (y = 0.5) ────────────────────────────────────────────────
-    {"id": "gcdl",             "label": "Google Cloud\nDigital Leader", "exam_id": None,                             "x": 0,    "y": 0.5,  "paths": ["Cloud"]},
-    {"id": "gcp_ace",          "label": "GCP ACE",                    "exam_id": None,                               "x": 2,    "y": 0.5,  "paths": ["Cloud"]},
-    {"id": "gcp_pca",          "label": "GCP PCA",                    "exam_id": None,                               "x": 4,    "y": 0.5,  "paths": ["Cloud"]},
     # ── DEVOPS (y = -1) ───────────────────────────────────────────────────────
     {"id": "devnet_assoc",     "label": "Cisco DevNet\nAssociate",    "exam_id": "CCNA Automation",                  "x": 6.5,  "y": -1,   "paths": ["DevOps"]},
     {"id": "devnet_pro",       "label": "Cisco DevNet\nPro",          "exam_id": "CCNP Automation",                  "x": 8.5,  "y": -1,   "paths": ["DevOps"]},
@@ -66,7 +62,6 @@ _NODES: list[dict] = [
     {"id": "data_plus",        "label": "Data+",                      "exam_id": "Data+",                            "x": 0,    "y": -5,   "paths": ["Data"]},
     {"id": "aws_data_eng",     "label": "AWS Data\nEngineer",         "exam_id": "AWS Data Engineer Associate",      "x": 2.5,  "y": -5,   "paths": ["Data"]},
     {"id": "dp900",            "label": "DP-900",                     "exam_id": "DP-900",                           "x": 5,    "y": -5,   "paths": ["Data"]},
-    {"id": "gcp_data_eng",     "label": "Google\nData Engineer",      "exam_id": None,                               "x": 7.5,  "y": -5,   "paths": ["Data"]},
 ]
 
 # Build id→node index for edge resolution
@@ -104,9 +99,6 @@ _EDGES: list[dict] = [
     # Cloud — Azure security
     {"s": "az900",           "t": "az500",            "path": "Cloud"},
     {"s": "az500",           "t": "sc100",            "path": "Cloud"},
-    # Cloud — GCP
-    {"s": "gcdl",            "t": "gcp_ace",          "path": "Cloud"},
-    {"s": "gcp_ace",         "t": "gcp_pca",          "path": "Cloud"},
     # DevOps
     {"s": "ccna",            "t": "devnet_assoc",     "path": "DevOps"},
     {"s": "devnet_assoc",    "t": "devnet_pro",       "path": "DevOps"},
@@ -121,7 +113,6 @@ _EDGES: list[dict] = [
     # Data
     {"s": "data_plus",       "t": "aws_data_eng",     "path": "Data"},
     {"s": "aws_data_eng",    "t": "dp900",            "path": "Data"},
-    {"s": "dp900",           "t": "gcp_data_eng",     "path": "Data"},
 ]
 
 # Path display config
@@ -159,7 +150,7 @@ _CHAINS: list[list[str]] = [
     ["ccna", "devnet_assoc", "devnet_pro"],
     ["az104", "az400"],
     ["linux_plus", "lfcs", "rhcsa", "rhce", "cka", "cks"],
-    ["data_plus", "aws_data_eng", "dp900", "gcp_data_eng"],
+    ["data_plus", "aws_data_eng", "dp900"],
 ]
 
 ALL_PATHS = ["All Paths"] + sorted(_PATH_COLORS.keys())
