@@ -47,6 +47,7 @@ import pages.cheat_sheets as page_cheat_sheets
 import pages.prediction as page_prediction
 import pages.review_queue as page_review_queue
 import pages.labs as page_labs
+import pages.resume as page_resume
 
 
 st.set_page_config(page_title="NetSecure StudyOS", page_icon="🧠", layout="wide")
@@ -428,9 +429,10 @@ tabs = st.tabs(
         "Predicted Score",
         "Review Queue",
         "Home Labs",
+        "Resume Builder",
     ]
 )
-dashboard_tab, quiz_tab, simulator_tab, weak_tab, plan_tab, cheat_tab, prediction_tab, review_tab, labs_tab = tabs
+dashboard_tab, quiz_tab, simulator_tab, weak_tab, plan_tab, cheat_tab, prediction_tab, review_tab, labs_tab, resume_tab = tabs
 
 with dashboard_tab:
     page_dashboard.render(ctx)
@@ -458,3 +460,6 @@ with review_tab:
 
 with labs_tab:
     page_labs.render(ctx)
+
+with resume_tab:
+    page_resume.render(ctx)

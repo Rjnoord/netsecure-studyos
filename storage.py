@@ -86,6 +86,13 @@ CREATE TABLE IF NOT EXISTS badges (
     earned_at   TEXT NOT NULL,
     PRIMARY KEY (badge_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS resume (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    resume_md    TEXT NOT NULL,
+    user_inputs  TEXT NOT NULL,
+    generated_at TEXT NOT NULL
+);
 """
 
 LEVEL_THRESHOLDS: list[tuple[int, str]] = [
@@ -136,6 +143,7 @@ def _ensure_memory_defaults() -> dict:
     state.setdefault("streak", {"current_streak": 0, "longest_streak": 0, "last_study_date": None})
     state.setdefault("badges", [])
     state.setdefault("_streak_updated_date", None)
+    state.setdefault("resume", None)
     return state
 
 
@@ -749,3 +757,51 @@ def build_quiz_history_frame(results: list[dict]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows, columns=columns)
+
+
+# ---------------------------------------------------------------------------
+# Resume storage
+# ---------------------------------------------------------------------------
+
+def save_resume(resume_md: str, user_inputs: dict) -> None:
+    """Persist the last generated resume to SQLite (single-row upsert)."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    payload = {"resume_md": resume_md, "user_inputs": user_inputs, "generated_at": now}
+    state["resume"] = payload
+    if not is_file_persistence_enabled():
+        return
+    try:
+        with _db_connection() as conn:
+            conn.execute(
+                "INSERT INTO resume (id, resume_md, user_inputs, generated_at) VALUES (1, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET"
+                "   resume_md = excluded.resume_md,"
+                "   user_inputs = excluded.user_inputs,"
+                "   generated_at = excluded.generated_at",
+                (resume_md, json.dumps(user_inputs), now),
+            )
+    except (sqlite3.Error, OSError):
+        pass
+
+
+def load_resume() -> dict | None:
+    """Return the last saved resume dict or None if none exists."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT resume_md, user_inputs, generated_at FROM resume WHERE id = 1"
+                ).fetchone()
+            if row:
+                return {
+                    "resume_md": row["resume_md"],
+                    "user_inputs": json.loads(row["user_inputs"]),
+                    "generated_at": row["generated_at"],
+                }
+        except (sqlite3.Error, json.JSONDecodeError):
+            pass
+    return state.get("resume")
