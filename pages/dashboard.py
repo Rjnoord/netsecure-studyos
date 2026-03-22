@@ -5,9 +5,13 @@ import plotly.express as px
 import streamlit as st
 
 from storage import (
+    LEVEL_THRESHOLDS,
     build_quiz_history_frame,
     export_dataframe,
     export_markdown,
+    get_badges,
+    get_level_info,
+    get_streak,
     load_user_profile,
 )
 from tracker import (
@@ -25,6 +29,50 @@ from utils import (
     render_section_note,
 )
 from pages._shared import _storage_caption
+
+
+def _render_xp_panel() -> None:
+    level = get_level_info()
+    streak = get_streak()
+    badges = get_badges()
+    recent_badges = sorted(badges, key=lambda b: b["earned_at"], reverse=True)[:3]
+
+    st.markdown("### Player Progress")
+    left, mid, right = st.columns([2.2, 0.9, 1.9])
+
+    with left:
+        next_title = level["next_level_title"]
+        bar_label = (
+            f"{level['xp_to_next']:,} XP to {next_title}"
+            if level["xp_to_next"] > 0
+            else "Max level reached!"
+        )
+        st.markdown(
+            f"**Level {level['level_index'] + 1} — {level['level_title']}** &nbsp;·&nbsp; "
+            f"{level['current_xp']:,} XP total",
+            unsafe_allow_html=True,
+        )
+        st.progress(level["progress_pct"] / 100, text=bar_label)
+
+    with mid:
+        streak_count = streak.get("current_streak", 0)
+        label = f"{streak_count} day{'s' if streak_count != 1 else ''}"
+        st.metric("🔥 Streak", label)
+
+    with right:
+        if recent_badges:
+            st.caption("Recent badges")
+            for b in recent_badges:
+                st.markdown(f"🏅 **{b['badge_name']}** — {b['description']}")
+        if badges:
+            with st.expander(f"View all badges ({len(badges)})"):
+                for b in sorted(badges, key=lambda x: x["earned_at"], reverse=True):
+                    st.markdown(f"🏅 **{b['badge_name']}** — {b['description']}")
+                    st.caption(f"Earned {b['earned_at'][:10]}")
+        else:
+            st.caption("No badges yet — complete a quiz to earn your first!")
+
+    st.divider()
 
 
 def _export_section(selected_exam: str, all_results: list[dict], exam_results: list[dict]) -> None:
@@ -96,6 +144,7 @@ def render(ctx: dict) -> None:
     domain_conf_df = ctx["domain_conf_df"]
     queue_df = ctx["queue_df"]
 
+    _render_xp_panel()
     weakest = weakest_topics(selected_exam, exam_results, limit=5)
     strongest = strongest_topics(selected_exam, exam_results, limit=5)
     metrics = st.columns(4)

@@ -98,6 +98,72 @@ def generate_quiz(exam: str, domains: list[str], question_count: int, mode: str)
     return questions
 
 
+def award_quiz_xp(
+    evaluated: dict,
+    score_pct: float,
+    elapsed_seconds: int,
+    question_count: int,
+    hour: int | None = None,
+) -> dict:
+    """Award XP and badges after a submitted quiz. Returns a summary dict for display."""
+    from storage import add_xp, award_badge, get_badges  # lazy import avoids circular dependency
+
+    xp_earned = 0
+    badges_earned = []
+
+    correct = evaluated["correct_count"]
+    wrong = question_count - correct
+
+    if correct > 0:
+        add_xp(correct * 10, f"Correct answers ({correct}×)")
+        xp_earned += correct * 10
+    if wrong > 0:
+        add_xp(wrong * 2, f"Attempted ({wrong} incorrect)")
+        xp_earned += wrong * 2
+
+    add_xp(50, "Quiz completed")
+    xp_earned += 50
+
+    if score_pct >= 90:
+        add_xp(150, "Score above 90%")
+        xp_earned += 150
+    elif score_pct >= 80:
+        add_xp(75, "Score above 80%")
+        xp_earned += 75
+
+    existing = {b["badge_id"] for b in get_badges()}
+
+    if "first_steps" not in existing:
+        add_xp(100, "First quiz bonus")
+        xp_earned += 100
+        if award_badge("first_steps", "First Steps", "Completed your first quiz"):
+            badges_earned.append("First Steps")
+
+    if score_pct == 100:
+        if award_badge("perfect_score", "Perfect Score", "Scored 100% on a quiz"):
+            badges_earned.append("Perfect Score")
+
+    if question_count == 25 and elapsed_seconds < 300:
+        if award_badge("speed_demon", "Speed Demon", "Completed a 25-question quiz in under 5 minutes"):
+            badges_earned.append("Speed Demon")
+
+    for ds in evaluated.get("domain_breakdown", []):
+        if ds.get("accuracy_pct", 0) >= 90 and ds.get("total", 0) >= 3:
+            if award_badge("domain_dominator", "Domain Dominator", "Achieved 90%+ accuracy in a domain"):
+                badges_earned.append("Domain Dominator")
+            break
+
+    if hour is not None and 0 <= hour < 1:
+        if award_badge("night_owl", "Night Owl", "Completed a quiz after midnight"):
+            badges_earned.append("Night Owl")
+
+    if hour is not None and hour < 7:
+        if award_badge("early_bird", "Early Bird", "Completed a quiz before 7am"):
+            badges_earned.append("Early Bird")
+
+    return {"xp_earned": xp_earned, "badges_earned": badges_earned}
+
+
 def evaluate_submission(questions: list[dict], answers: dict[str, str | None]) -> dict:
     review = []
     domain_stats = {}

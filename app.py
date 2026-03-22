@@ -16,6 +16,7 @@ from storage import (
     load_user_profile,
     persistence_status,
     save_user_profile,
+    update_streak,
 )
 from tracker import (
     calculate_readiness,
@@ -48,6 +49,9 @@ import pages.labs as page_labs
 st.set_page_config(page_title="NetSecure StudyOS", page_icon="🧠", layout="wide")
 inject_app_css()
 ensure_storage()
+if "streak_checked" not in st.session_state:
+    update_streak()
+    st.session_state["streak_checked"] = True
 
 
 def _initialize_state() -> None:

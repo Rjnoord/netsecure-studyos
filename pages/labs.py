@@ -5,7 +5,7 @@ from datetime import datetime
 import streamlit as st
 
 from labs import get_home_labs, lab_note_feedback
-from storage import load_user_profile, save_user_profile
+from storage import add_xp, award_badge, get_badges, load_user_profile, save_user_profile
 from utils import render_section_note, render_topic_card
 
 
@@ -83,6 +83,7 @@ def render(ctx: dict) -> None:
         )
         with action_cols[0]:
             if st.button("Save Lab Progress", key=f"save_lab_{lab['id']}", use_container_width=True):
+                was_complete_before = bool(progress.get("completed"))
                 profile = _save_lab_progress(
                     profile,
                     selected_exam,
@@ -92,7 +93,36 @@ def render(ctx: dict) -> None:
                     note_value,
                 )
                 current_issues = lab_note_feedback(note_value)
-                if len(updated_steps) == len(lab["steps"]) and not current_issues:
+                newly_complete = len(updated_steps) == len(lab["steps"]) and not current_issues
+                if newly_complete and not was_complete_before:
+                    st.success("Lab marked complete. Resume bullets are now unlocked.")
+                    add_xp(150, "Lab completed")
+                    st.info("+ 150 XP earned!")
+                    existing_badge_ids = {b["badge_id"] for b in get_badges()}
+                    if "lab_rat" not in existing_badge_ids:
+                        if award_badge("lab_rat", "Lab Rat", "Completed your first lab"):
+                            st.success("🏅 Badge unlocked: **Lab Rat**")
+                    # Count total completed labs across all exams
+                    total_complete = sum(
+                        1
+                        for ex_labs in profile.get("lab_progress", {}).values()
+                        for lab_data in ex_labs.values()
+                        if lab_data.get("completed")
+                    )
+                    if total_complete >= 10:
+                        if award_badge("lab_master", "Lab Master", "Completed 10 labs"):
+                            st.success("🏅 Badge unlocked: **Lab Master**")
+                    # Resume Ready: 5 labs with note requirements met
+                    passing_labs = sum(
+                        1
+                        for ex_labs in profile.get("lab_progress", {}).values()
+                        for lab_data in ex_labs.values()
+                        if lab_data.get("completed") and lab_data.get("note_requirements_met")
+                    )
+                    if passing_labs >= 5:
+                        if award_badge("resume_ready", "Resume Ready", "Completed 5 labs with a quality reflection note"):
+                            st.success("🏅 Badge unlocked: **Resume Ready**")
+                elif newly_complete:
                     st.success("Lab marked complete. Resume bullets are now unlocked.")
                 elif len(updated_steps) == len(lab["steps"]):
                     st.warning("All steps are complete, but the reflection/evidence note still does not meet the unlock rubric.")

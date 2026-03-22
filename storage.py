@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta
 import json
 import sqlite3
 from contextlib import contextmanager
@@ -61,7 +62,44 @@ CREATE TABLE IF NOT EXISTS mobile_sync (
     sync_json  TEXT NOT NULL,
     updated_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS xp_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id   INTEGER NOT NULL DEFAULT 1,
+    amount    INTEGER NOT NULL,
+    reason    TEXT NOT NULL,
+    logged_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS streaks (
+    user_id         INTEGER PRIMARY KEY DEFAULT 1,
+    current_streak  INTEGER NOT NULL DEFAULT 0,
+    longest_streak  INTEGER NOT NULL DEFAULT 0,
+    last_study_date TEXT
+);
+
+CREATE TABLE IF NOT EXISTS badges (
+    badge_id    TEXT NOT NULL,
+    user_id     INTEGER NOT NULL DEFAULT 1,
+    badge_name  TEXT NOT NULL,
+    description TEXT NOT NULL,
+    earned_at   TEXT NOT NULL,
+    PRIMARY KEY (badge_id, user_id)
+);
 """
+
+LEVEL_THRESHOLDS: list[tuple[int, str]] = [
+    (0, "Novice"),
+    (500, "Technician"),
+    (1500, "Associate"),
+    (3000, "Engineer"),
+    (6000, "Senior Engineer"),
+    (10000, "Architect"),
+    (15000, "Senior Architect"),
+    (25000, "Expert"),
+    (40000, "Elite"),
+    (60000, "Legend"),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +131,11 @@ def _ensure_memory_defaults() -> dict:
     state.setdefault("results", [])
     state.setdefault("sessions", {})
     state.setdefault("mobile_sync", None)
+    state.setdefault("xp_total", 0)
+    state.setdefault("xp_log", [])
+    state.setdefault("streak", {"current_streak": 0, "longest_streak": 0, "last_study_date": None})
+    state.setdefault("badges", [])
+    state.setdefault("_streak_updated_date", None)
     return state
 
 
@@ -469,6 +512,209 @@ def save_mobile_sync(payload: dict) -> None:
         _atomic_write_json(MOBILE_APP_SYNC_PATH, payload)
     except OSError:
         pass  # Mobile app JSON is best-effort; SQLite write already succeeded
+
+
+# ---------------------------------------------------------------------------
+# Analytics helper
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# XP system
+# ---------------------------------------------------------------------------
+
+def get_xp(user_id: int = 1) -> int:
+    """Return the current total XP for the user."""
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT COALESCE(SUM(amount), 0) AS total FROM xp_log WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+            return int(row["total"]) if row else 0
+        except sqlite3.Error:
+            pass
+    return int(state.get("xp_total", 0))
+
+
+def add_xp(amount: int, reason: str, user_id: int = 1) -> int:
+    """Add XP and log the reason. Returns the new running total."""
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                conn.execute(
+                    "INSERT INTO xp_log (user_id, amount, reason, logged_at) VALUES (?, ?, ?, ?)",
+                    (user_id, amount, reason, now),
+                )
+        except (sqlite3.Error, OSError):
+            pass
+    state["xp_total"] = state.get("xp_total", 0) + amount
+    state["xp_log"].append({"amount": amount, "reason": reason, "logged_at": now})
+    return int(state["xp_total"])
+
+
+# ---------------------------------------------------------------------------
+# Streak system
+# ---------------------------------------------------------------------------
+
+def get_streak(user_id: int = 1) -> dict:
+    """Return current streak data: current_streak, longest_streak, last_study_date."""
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT current_streak, longest_streak, last_study_date"
+                    " FROM streaks WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+            if row:
+                return {
+                    "current_streak": row["current_streak"],
+                    "longest_streak": row["longest_streak"],
+                    "last_study_date": row["last_study_date"],
+                }
+        except sqlite3.Error:
+            pass
+    return dict(state.get("streak", {"current_streak": 0, "longest_streak": 0, "last_study_date": None}))
+
+
+def update_streak(user_id: int = 1) -> dict:
+    """Check if the user studied today, then increment or reset streak and award bonuses.
+
+    Guards against double-awarding within the same session using in-memory state.
+    """
+    today = date.today().isoformat()
+    state = _ensure_memory_defaults()
+
+    if state.get("_streak_updated_date") == today:
+        return get_streak(user_id)
+    state["_streak_updated_date"] = today
+
+    streak = get_streak(user_id)
+    last_study = streak.get("last_study_date")
+    current = streak.get("current_streak", 0)
+    longest = streak.get("longest_streak", 0)
+
+    if last_study == today:
+        return streak
+
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    current = current + 1 if last_study == yesterday else 1
+    longest = max(longest, current)
+
+    add_xp(25, "Daily login", user_id)
+
+    if current == 7:
+        add_xp(200, "7-day streak bonus", user_id)
+        award_badge("on_fire", "On Fire", "Maintained a 7-day study streak", user_id)
+    if current == 30:
+        add_xp(500, "30-day streak bonus", user_id)
+        award_badge("unstoppable", "Unstoppable", "Maintained a 30-day study streak", user_id)
+
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                conn.execute(
+                    "INSERT INTO streaks (user_id, current_streak, longest_streak, last_study_date)"
+                    " VALUES (?, ?, ?, ?)"
+                    " ON CONFLICT(user_id) DO UPDATE SET"
+                    "   current_streak = excluded.current_streak,"
+                    "   longest_streak = excluded.longest_streak,"
+                    "   last_study_date = excluded.last_study_date",
+                    (user_id, current, longest, today),
+                )
+        except (sqlite3.Error, OSError):
+            pass
+
+    updated = {"current_streak": current, "longest_streak": longest, "last_study_date": today}
+    state["streak"] = updated
+    return updated
+
+
+# ---------------------------------------------------------------------------
+# Badge system
+# ---------------------------------------------------------------------------
+
+def get_badges(user_id: int = 1) -> list[dict]:
+    """Return all earned badges for the user."""
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                rows = conn.execute(
+                    "SELECT badge_id, badge_name, description, earned_at"
+                    " FROM badges WHERE user_id = ? ORDER BY earned_at",
+                    (user_id,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error:
+            pass
+    return [dict(b) for b in state.get("badges", [])]
+
+
+def award_badge(badge_id: str, badge_name: str, description: str, user_id: int = 1) -> bool:
+    """Save a badge if not already earned. Returns True if newly awarded."""
+    existing = {b["badge_id"] for b in get_badges(user_id)}
+    if badge_id in existing:
+        return False
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO badges"
+                    " (badge_id, user_id, badge_name, description, earned_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (badge_id, user_id, badge_name, description, now),
+                )
+        except (sqlite3.Error, OSError):
+            pass
+    state["badges"].append(
+        {"badge_id": badge_id, "badge_name": badge_name, "description": description, "earned_at": now}
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Level info
+# ---------------------------------------------------------------------------
+
+def get_level_info(user_id: int = 1) -> dict:
+    """Return current level title, XP progress, and percentage toward next level."""
+    xp = get_xp(user_id)
+    level_index = 0
+    for i, (threshold, _) in enumerate(LEVEL_THRESHOLDS):
+        if xp >= threshold:
+            level_index = i
+
+    current_threshold, level_title = LEVEL_THRESHOLDS[level_index]
+
+    if level_index + 1 < len(LEVEL_THRESHOLDS):
+        next_threshold, next_title = LEVEL_THRESHOLDS[level_index + 1]
+        xp_in_level = xp - current_threshold
+        xp_for_level = next_threshold - current_threshold
+        progress_pct = min(100.0, round((xp_in_level / xp_for_level) * 100, 1))
+        xp_to_next = next_threshold - xp
+    else:
+        next_threshold = LEVEL_THRESHOLDS[-1][0]
+        next_title = level_title
+        xp_to_next = 0
+        progress_pct = 100.0
+
+    return {
+        "level_title": level_title,
+        "level_index": level_index,
+        "current_xp": xp,
+        "next_level_xp": next_threshold,
+        "next_level_title": next_title,
+        "xp_to_next": xp_to_next,
+        "progress_pct": progress_pct,
+    }
 
 
 # ---------------------------------------------------------------------------

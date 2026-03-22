@@ -9,7 +9,7 @@ import plotly.express as px
 import streamlit as st
 
 from exams import EXAM_DOMAINS
-from question_engine import evaluate_submission
+from question_engine import award_quiz_xp, evaluate_submission
 from storage import (
     delete_active_session,
     is_file_persistence_enabled,
@@ -307,6 +307,17 @@ def _render_quiz_form(quiz_key: str, result_key: str, title: str, save_mode: str
         st.session_state[result_key] = result
         _sync_mobile_data(profile, load_results())
         st.success(f"Scored {result['score_pct']:.1f}% ({result['correct_count']}/{result['question_count']}).")
+        xp_result = award_quiz_xp(
+            evaluated,
+            result["score_pct"],
+            elapsed_seconds,
+            len(questions),
+            hour=datetime.now().hour,
+        )
+        if xp_result["xp_earned"] > 0:
+            st.info(f"+ {xp_result['xp_earned']:,} XP earned!")
+        for badge_name in xp_result["badges_earned"]:
+            st.success(f"🏅 Badge unlocked: **{badge_name}**")
 
     result = st.session_state.get(result_key)
     if result:
