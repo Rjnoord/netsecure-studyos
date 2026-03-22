@@ -48,6 +48,7 @@ import pages.prediction as page_prediction
 import pages.review_queue as page_review_queue
 import pages.labs as page_labs
 import pages.resume as page_resume
+import pages.skill_tree as page_skill_tree
 
 
 st.set_page_config(page_title="NetSecure StudyOS", page_icon="🧠", layout="wide")
@@ -313,7 +314,9 @@ with st.sidebar:
     st.header("Session Setup")
     exam_options = list(EXAM_DOMAINS.keys())
     default_exam = profile.get("target_exam") if profile.get("target_exam") in EXAM_DOMAINS else exam_options[0]
-    selected_exam = st.selectbox("Select exam", exam_options, index=exam_options.index(default_exam))
+    if "sidebar_exam_select" not in st.session_state:
+        st.session_state["sidebar_exam_select"] = default_exam
+    selected_exam = st.selectbox("Select exam", exam_options, key="sidebar_exam_select")
     selected_mode = st.selectbox("Select mode", ["Practice", "Exam Simulator"])
     selected_count = st.selectbox("Select question count", [10, 25, 50, 90, 100], index=1)
     timed_mode = st.toggle("Timed mode", value=False)
@@ -430,9 +433,10 @@ tabs = st.tabs(
         "Review Queue",
         "Home Labs",
         "Resume Builder",
+        "Skill Tree",
     ]
 )
-dashboard_tab, quiz_tab, simulator_tab, weak_tab, plan_tab, cheat_tab, prediction_tab, review_tab, labs_tab, resume_tab = tabs
+dashboard_tab, quiz_tab, simulator_tab, weak_tab, plan_tab, cheat_tab, prediction_tab, review_tab, labs_tab, resume_tab, skill_tree_tab = tabs
 
 with dashboard_tab:
     page_dashboard.render(ctx)
@@ -463,3 +467,6 @@ with labs_tab:
 
 with resume_tab:
     page_resume.render(ctx)
+
+with skill_tree_tab:
+    page_skill_tree.render(ctx)
