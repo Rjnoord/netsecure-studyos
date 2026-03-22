@@ -132,6 +132,31 @@ CREATE TABLE IF NOT EXISTS boss_battles (
     hiring_rec       TEXT,
     completed_at     TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS debate_sessions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL DEFAULT 1,
+    exam          TEXT NOT NULL,
+    domain        TEXT NOT NULL,
+    topic         TEXT NOT NULL,
+    wrong_answer  TEXT NOT NULL,
+    user_response TEXT NOT NULL,
+    score         INTEGER NOT NULL,
+    completed_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS misconceptions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL DEFAULT 1,
+    exam          TEXT NOT NULL,
+    domain        TEXT NOT NULL,
+    topic         TEXT NOT NULL,
+    wrong_pattern TEXT NOT NULL,
+    correction    TEXT NOT NULL,
+    detected_at   TEXT NOT NULL,
+    resolved      INTEGER NOT NULL DEFAULT 0,
+    resolved_at   TEXT
+);
 """
 
 LEVEL_THRESHOLDS: list[tuple[int, str]] = [
@@ -187,6 +212,8 @@ def _ensure_memory_defaults() -> dict:
     state.setdefault("daily_challenges", {})
     state.setdefault("challenge_streak", {"current_streak": 0, "longest_streak": 0, "last_challenge_date": None})
     state.setdefault("boss_battles", [])
+    state.setdefault("debate_sessions", [])
+    state.setdefault("misconceptions", [])
     return state
 
 
@@ -1238,3 +1265,212 @@ def get_boss_battle_stats(user_id: int = 1) -> dict:
             battles[0].get("hiring_rec", "") if battles else "",
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Debate session system
+# ---------------------------------------------------------------------------
+
+def save_debate_session(
+    exam: str,
+    domain: str,
+    topic: str,
+    wrong_answer: str,
+    user_response: str,
+    score: int,
+    user_id: int = 1,
+) -> None:
+    """Persist a completed debate session."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    record = {
+        "exam": exam, "domain": domain, "topic": topic,
+        "wrong_answer": wrong_answer, "user_response": user_response,
+        "score": score, "completed_at": now, "user_id": user_id,
+    }
+    state["debate_sessions"].append(record)
+    if not is_file_persistence_enabled():
+        return
+    try:
+        with _db_connection() as conn:
+            conn.execute(
+                "INSERT INTO debate_sessions"
+                " (user_id, exam, domain, topic, wrong_answer, user_response, score, completed_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, exam, domain, topic, wrong_answer, user_response, score, now),
+            )
+    except (sqlite3.Error, OSError):
+        pass
+
+
+def get_debate_history(limit: int = 20, user_id: int = 1) -> list[dict]:
+    """Return the last N debate sessions, newest first."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                rows = conn.execute(
+                    "SELECT exam, domain, topic, wrong_answer, user_response, score, completed_at"
+                    " FROM debate_sessions WHERE user_id = ?"
+                    " ORDER BY completed_at DESC LIMIT ?",
+                    (user_id, limit),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error:
+            pass
+    sessions = [s for s in state.get("debate_sessions", []) if s.get("user_id", 1) == user_id]
+    return sorted(sessions, key=lambda s: s.get("completed_at", ""), reverse=True)[:limit]
+
+
+def get_debate_stats(user_id: int = 1) -> dict:
+    """Return aggregate debate statistics."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) as total,"
+                    " COALESCE(AVG(score), 0) as avg_score,"
+                    " COALESCE(SUM(CASE WHEN score >= 8 THEN 1 ELSE 0 END), 0) as high_scores"
+                    " FROM debate_sessions WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+                domain_row = conn.execute(
+                    "SELECT domain, AVG(score) as avg"
+                    " FROM debate_sessions WHERE user_id = ?"
+                    " GROUP BY domain ORDER BY avg DESC LIMIT 1",
+                    (user_id,),
+                ).fetchone()
+            return {
+                "total": row["total"] if row else 0,
+                "avg_score": round(row["avg_score"], 1) if row else 0.0,
+                "high_scores": row["high_scores"] if row else 0,
+                "strongest_domain": domain_row["domain"] if domain_row else "—",
+            }
+        except sqlite3.Error:
+            pass
+    sessions = [s for s in state.get("debate_sessions", []) if s.get("user_id", 1) == user_id]
+    if not sessions:
+        return {"total": 0, "avg_score": 0.0, "high_scores": 0, "strongest_domain": "—"}
+    from collections import defaultdict as _dd
+    domain_scores: dict = _dd(list)
+    for s in sessions:
+        domain_scores[s.get("domain", "")].append(s.get("score", 0))
+    strongest = max(domain_scores, key=lambda d: sum(domain_scores[d]) / len(domain_scores[d]))
+    return {
+        "total": len(sessions),
+        "avg_score": round(sum(s.get("score", 0) for s in sessions) / len(sessions), 1),
+        "high_scores": sum(1 for s in sessions if s.get("score", 0) >= 8),
+        "strongest_domain": strongest,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Misconception system
+# ---------------------------------------------------------------------------
+
+def save_misconception(
+    exam: str,
+    domain: str,
+    topic: str,
+    wrong_pattern: str,
+    correction: str,
+    user_id: int = 1,
+) -> int | None:
+    """Persist a detected misconception. Returns row id or None."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    new_id = len(state["misconceptions"]) + 1
+    record = {
+        "id": new_id, "exam": exam, "domain": domain, "topic": topic,
+        "wrong_pattern": wrong_pattern, "correction": correction,
+        "detected_at": now, "resolved": False, "resolved_at": None, "user_id": user_id,
+    }
+    state["misconceptions"].append(record)
+    if not is_file_persistence_enabled():
+        return new_id
+    try:
+        with _db_connection() as conn:
+            cur = conn.execute(
+                "INSERT INTO misconceptions"
+                " (user_id, exam, domain, topic, wrong_pattern, correction, detected_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, exam, domain, topic, wrong_pattern, correction, now),
+            )
+            return cur.lastrowid
+    except (sqlite3.Error, OSError):
+        return None
+
+
+def get_active_misconceptions(user_id: int = 1) -> list[dict]:
+    """Return all unresolved misconceptions, newest first."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, exam, domain, topic, wrong_pattern, correction, detected_at"
+                    " FROM misconceptions WHERE user_id = ? AND resolved = 0"
+                    " ORDER BY detected_at DESC",
+                    (user_id,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error:
+            pass
+    return [
+        dict(m) for m in state.get("misconceptions", [])
+        if m.get("user_id", 1) == user_id and not m.get("resolved")
+    ]
+
+
+def resolve_misconception(misconception_id: int, user_id: int = 1) -> None:
+    """Mark a misconception as resolved."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    for m in state.get("misconceptions", []):
+        if m.get("id") == misconception_id and m.get("user_id", 1) == user_id:
+            m["resolved"] = True
+            m["resolved_at"] = now
+    if not is_file_persistence_enabled():
+        return
+    try:
+        with _db_connection() as conn:
+            conn.execute(
+                "UPDATE misconceptions SET resolved = 1, resolved_at = ? WHERE id = ? AND user_id = ?",
+                (now, misconception_id, user_id),
+            )
+    except (sqlite3.Error, OSError):
+        pass
+
+
+def misconception_already_exists(exam: str, domain: str, topic: str, wrong_pattern: str, user_id: int = 1) -> bool:
+    """Return True if an identical unresolved misconception is already stored."""
+    ensure_storage()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT id FROM misconceptions"
+                    " WHERE user_id = ? AND exam = ? AND domain = ? AND topic = ?"
+                    " AND wrong_pattern = ? AND resolved = 0",
+                    (user_id, exam, domain, topic, wrong_pattern),
+                ).fetchone()
+            return row is not None
+        except sqlite3.Error:
+            pass
+    state = _ensure_memory_defaults()
+    return any(
+        m.get("user_id", 1) == user_id
+        and m.get("exam") == exam
+        and m.get("domain") == domain
+        and m.get("topic") == topic
+        and m.get("wrong_pattern") == wrong_pattern
+        and not m.get("resolved")
+        for m in state.get("misconceptions", [])
+    )

@@ -14,10 +14,277 @@ from storage import (
     award_badge,
     get_badges,
     get_boss_battle_stats,
+    get_debate_history,
+    get_debate_stats,
     save_boss_battle,
+    save_debate_session,
 )
 from utils import countdown_html, render_section_note
 from pages._shared import _build_quiz_session, _persist_session, _render_quiz_form
+
+
+# ---------------------------------------------------------------------------
+# Debate Mode helpers
+# ---------------------------------------------------------------------------
+
+_DEBATE_MIN_WORDS = 50
+
+
+def _pick_debate_question(exam: str) -> dict | None:
+    """Return a random question from the pool with a selected wrong answer."""
+    import random
+    pool = get_question_pool(exam)
+    if not pool:
+        return None
+    fact = random.choice(pool)
+    distractors = fact.get("distractors", [])
+    if not distractors:
+        return None
+    wrong = random.choice(distractors)
+    return {
+        "exam": exam,
+        "domain": fact["domain"],
+        "topic": fact["concept"],
+        "correct_answer": fact["correct"],
+        "wrong_answer": wrong,
+        "explanation": fact["explanation"],
+    }
+
+
+def _grade_debate_response(
+    exam: str,
+    domain: str,
+    topic: str,
+    wrong_answer: str,
+    correct_answer: str,
+    user_response: str,
+) -> dict | None:
+    """Ask Claude to grade the user's written rebuttal."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=600,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"You are grading a written technical rebuttal for the {exam} exam.\n\n"
+                    f"Domain: {domain}\n"
+                    f"Topic: {topic}\n"
+                    f"Wrong answer presented to the student: {wrong_answer}\n"
+                    f"Correct answer: {correct_answer}\n\n"
+                    f"Student's rebuttal:\n{user_response}\n\n"
+                    "Grade the response on these three dimensions and return ONLY a JSON object with:\n"
+                    '- "score": integer 1-10 (overall grade)\n'
+                    '- "technical_accuracy": string (1-2 sentences — is their reasoning correct?)\n'
+                    '- "completeness": string (1-2 sentences — did they identify the real answer?)\n'
+                    '- "clarity": string (1-2 sentences — would a colleague understand it?)\n'
+                    '- "model_answer": string (2-3 sentences — ideal rebuttal for comparison)\n'
+                    '- "feedback": string (1-2 sentences of specific actionable advice)\n'
+                    "Output only valid JSON, no markdown fences."
+                ),
+            }],
+        )
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        text = text.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+        grade = __import__("json").loads(text)
+        required = {"score", "technical_accuracy", "completeness", "clarity", "model_answer", "feedback"}
+        return grade if required.issubset(grade.keys()) else None
+    except Exception:
+        return None
+
+
+def _award_debate_xp(score: int, domain: str) -> tuple[int, list[str]]:
+    xp = 0
+    badges: list[str] = []
+    existing = {b["badge_id"] for b in get_badges()}
+
+    add_xp(30, "Debate completed")
+    xp += 30
+
+    if score >= 8:
+        add_xp(75, "Debate high score (8+/10)")
+        xp += 75
+
+    if "debater" not in existing:
+        if award_badge("debater", "Debater", "Completed your first Debate session"):
+            badges.append("Debater")
+
+    # Check for Eloquent badge (10 debates scored 8+)
+    stats = get_debate_stats()
+    if stats["high_scores"] >= 10 and "eloquent" not in existing:
+        if award_badge("eloquent", "Eloquent", "Scored 8+ on 10 Debate sessions"):
+            badges.append("Eloquent")
+
+    # Check for Domain Expert badge (5 perfect 10/10 in same domain)
+    if score == 10:
+        history = get_debate_history(limit=50)
+        domain_perfects = sum(1 for s in history if s.get("domain") == domain and s.get("score") == 10)
+        if domain_perfects >= 5 and "domain_expert" not in existing:
+            if award_badge("domain_expert", "Domain Expert", f"Scored 10/10 on 5 Debate sessions in {domain}"):
+                badges.append("Domain Expert")
+
+    return xp, badges
+
+
+def _render_debate_mode(exam: str) -> None:
+    """Debate Mode state machine rendered inline."""
+    st.divider()
+    st.subheader("Debate Mode")
+    render_section_note(
+        "A colleague is wrong on the internet — and it's your job to correct them. "
+        "We'll present a wrong answer as if it's correct. Write a rebuttal (50+ words) "
+        "explaining why they're mistaken and what the real answer is."
+    )
+
+    phase = st.session_state.get("debate_phase", "idle")
+    debate_exam = st.session_state.get("debate_exam")
+
+    # Reset if switching exam
+    if debate_exam != exam and phase != "idle":
+        st.session_state["debate_phase"] = "idle"
+        phase = "idle"
+
+    stats = get_debate_stats()
+    if stats["total"] > 0:
+        sc1, sc2, sc3 = st.columns(3)
+        sc1.metric("Debates Completed", stats["total"])
+        sc2.metric("Average Score", f"{stats['avg_score']}/10")
+        sc3.metric("Strongest Domain", stats["strongest_domain"])
+
+    # ── Idle ─────────────────────────────────────────────────────────────────
+    if phase == "idle":
+        if st.button("Start Debate", type="primary", use_container_width=True, key="debate_start"):
+            q = _pick_debate_question(exam)
+            if not q:
+                st.error("No questions available for this exam.")
+                return
+            st.session_state.update({
+                "debate_exam": exam,
+                "debate_q": q,
+                "debate_phase": "writing",
+                "debate_grade": None,
+                "debate_xp_key": None,
+            })
+            st.rerun()
+        return
+
+    # ── Writing phase ─────────────────────────────────────────────────────────
+    if phase == "writing":
+        q = st.session_state.get("debate_q", {})
+        st.markdown(
+            f"**Domain:** {q.get('domain')} &nbsp;|&nbsp; "
+            f"**Topic:** {q.get('topic')} &nbsp;|&nbsp; "
+            f"**Exam:** {q.get('exam')}"
+        )
+        st.warning(
+            f"Your colleague says: **\"{q.get('wrong_answer')}\"**\n\n"
+            "Explain in writing why they are incorrect and what the right answer actually is."
+        )
+
+        with st.form("debate_form"):
+            response = st.text_area(
+                "Your rebuttal (minimum 50 words):",
+                height=180,
+                key="debate_response_input",
+                placeholder="Type your technical explanation here...",
+            )
+            word_count = len(response.split()) if response else 0
+            submitted = st.form_submit_button("Submit Rebuttal", type="primary", use_container_width=True)
+
+        st.caption(f"Word count: {word_count} / {_DEBATE_MIN_WORDS} minimum")
+
+        if submitted:
+            if word_count < _DEBATE_MIN_WORDS:
+                st.error(f"Response too short — write at least {_DEBATE_MIN_WORDS} words ({word_count} so far).")
+            else:
+                st.session_state["debate_user_response"] = response
+                st.session_state["debate_phase"] = "grading"
+                st.rerun()
+        return
+
+    # ── Grading phase ─────────────────────────────────────────────────────────
+    if phase == "grading":
+        q = st.session_state.get("debate_q", {})
+        response = st.session_state.get("debate_user_response", "")
+
+        if not st.session_state.get("debate_grade"):
+            with st.spinner("Grading your rebuttal..."):
+                grade = _grade_debate_response(
+                    q.get("exam", exam),
+                    q.get("domain", ""),
+                    q.get("topic", ""),
+                    q.get("wrong_answer", ""),
+                    q.get("correct_answer", ""),
+                    response,
+                )
+            if not grade:
+                grade = {
+                    "score": 5,
+                    "technical_accuracy": "Unable to grade — check ANTHROPIC_API_KEY.",
+                    "completeness": "Unable to grade.",
+                    "clarity": "Unable to grade.",
+                    "model_answer": q.get("explanation", "See exam documentation."),
+                    "feedback": "Resubmit when the API connection is restored.",
+                }
+            st.session_state["debate_grade"] = grade
+
+        grade = st.session_state["debate_grade"]
+        score = grade.get("score", 5)
+
+        # Award XP once
+        xp_key = f"debate_xp_{id(st.session_state.get('debate_q', {}))}"
+        if not st.session_state.get(xp_key):
+            xp, new_badges = _award_debate_xp(score, q.get("domain", ""))
+            save_debate_session(
+                exam=q.get("exam", exam),
+                domain=q.get("domain", ""),
+                topic=q.get("topic", ""),
+                wrong_answer=q.get("wrong_answer", ""),
+                user_response=response,
+                score=score,
+            )
+            st.session_state[xp_key] = True
+            st.session_state["debate_xp_earned"] = xp
+            st.session_state["debate_new_badges"] = new_badges
+
+        # Result display
+        if score >= 8:
+            st.success(f"Score: **{score}/10** — Excellent rebuttal!")
+        elif score >= 5:
+            st.warning(f"Score: **{score}/10** — Solid effort, see feedback below.")
+        else:
+            st.error(f"Score: **{score}/10** — Needs work.")
+
+        xp_earned = st.session_state.get("debate_xp_earned", 0)
+        if xp_earned:
+            st.info(f"+{xp_earned:,} XP earned!")
+        for b in st.session_state.get("debate_new_badges", []):
+            st.success(f"Badge unlocked: **{b}**!")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Technical Accuracy**")
+            st.write(grade.get("technical_accuracy", ""))
+            st.markdown("**Completeness**")
+            st.write(grade.get("completeness", ""))
+        with col2:
+            st.markdown("**Clarity**")
+            st.write(grade.get("clarity", ""))
+            st.markdown("**Feedback**")
+            st.write(grade.get("feedback", ""))
+
+        st.markdown("**Model Answer (for comparison)**")
+        st.info(grade.get("model_answer", ""))
+        st.markdown(f"*Correct answer: {q.get('correct_answer', '')}*")
+
+        if st.button("Next Debate", use_container_width=True, key="debate_next"):
+            st.session_state["debate_phase"] = "idle"
+            st.session_state.pop("debate_grade", None)
+            st.session_state.pop("debate_user_response", None)
+            st.rerun()
+        return
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +773,9 @@ def render(ctx: dict) -> None:
             )
             _persist_session("practice_quiz")
     _render_quiz_form("practice_quiz", "practice_result", "Practice Quiz", "practice", False)
+
+    # Debate Mode section
+    _render_debate_mode(selected_exam)
 
     # Boss Battle section
     _render_boss_battle(selected_exam, current_readiness)

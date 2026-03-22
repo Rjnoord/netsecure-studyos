@@ -9,12 +9,15 @@ from storage import (
     build_quiz_history_frame,
     export_dataframe,
     export_markdown,
+    get_active_misconceptions,
     get_badges,
     get_boss_battle_history,
     get_boss_battle_stats,
+    get_debate_stats,
     get_level_info,
     get_streak,
     load_user_profile,
+    resolve_misconception,
 )
 from tracker import (
     build_markdown_study_summary,
@@ -133,6 +136,44 @@ def _export_section(selected_exam: str, all_results: list[dict], exam_results: l
             st.success(f"Saved {path.name} to data/exports.")
         else:
             st.warning("Markdown export is unavailable in cloud/demo mode because local file writes are disabled.")
+
+
+def _render_debate_stats() -> None:
+    stats = get_debate_stats()
+    if stats["total"] == 0:
+        return
+    st.markdown("### Debate Mode Stats")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Debates Completed", stats["total"])
+    c2.metric("Average Score", f"{stats['avg_score']}/10")
+    c3.metric("High Scores (8+)", stats["high_scores"])
+    c4.metric("Strongest Domain", stats["strongest_domain"])
+    st.divider()
+
+
+def _render_misconceptions() -> None:
+    misconceptions = get_active_misconceptions()
+    if not misconceptions:
+        return
+
+    st.markdown("### Detected Misconceptions")
+    render_section_note(
+        "These patterns were detected from repeated wrong-answer selections across your quiz history. "
+        "Click Resolved when you feel confident you understand the concept."
+    )
+
+    for m in misconceptions[:3]:
+        with st.expander(
+            f"**{m.get('domain')}** — {m.get('topic')} ({m.get('exam')})",
+            expanded=True,
+        ):
+            st.markdown(f"**Repeated wrong answer:** {m.get('wrong_pattern')}")
+            st.info(m.get("correction", ""))
+            if st.button("Mark as Resolved", key=f"resolve_mc_{m.get('id')}"):
+                resolve_misconception(m["id"])
+                st.success("Marked as resolved!")
+                st.rerun()
+    st.divider()
 
 
 def _render_boss_battle_history() -> None:
@@ -268,5 +309,7 @@ def render(ctx: dict) -> None:
             hide_index=True,
         )
 
+    _render_debate_stats()
+    _render_misconceptions()
     _render_boss_battle_history()
     _export_section(selected_exam, all_results, exam_results)

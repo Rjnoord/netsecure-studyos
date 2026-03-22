@@ -25,6 +25,7 @@ from storage import (
 from tracker import (
     build_mobile_sync_payload,
     calculate_readiness,
+    detect_misconceptions,
     fatigue_breakdown,
 )
 from utils import (
@@ -336,7 +337,13 @@ def _render_quiz_form(quiz_key: str, result_key: str, title: str, save_mode: str
         _clear_session(quiz_key)
         profile = _refresh_profile()
         st.session_state[result_key] = result
-        _sync_mobile_data(profile, load_results())
+        all_results_now = load_results()
+        _sync_mobile_data(profile, all_results_now)
+        # Run misconception detection in the background (silent — results show in dashboard)
+        try:
+            detect_misconceptions(exam, all_results_now)
+        except Exception:
+            pass
         st.success(f"Scored {result['score_pct']:.1f}% ({result['correct_count']}/{result['question_count']}).")
         xp_result = award_quiz_xp(
             evaluated,

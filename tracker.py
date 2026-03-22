@@ -758,6 +758,86 @@ def build_markdown_study_summary(results: list[dict], profile: dict) -> str:
     return "\n".join(lines)
 
 
+def detect_misconceptions(exam: str, results: list[dict]) -> list[dict]:
+    """Scan quiz history and return newly-detected misconceptions.
+
+    A misconception is flagged when the user selects the *same* wrong answer
+    option 3+ times across questions in the same domain.  Each detected
+    pattern is passed to Claude to produce a targeted 3-sentence correction.
+    Already-stored (unresolved) patterns are skipped to avoid duplicates.
+
+    Returns a list of dicts ready to pass straight to save_misconception().
+    """
+    from collections import Counter
+    from storage import misconception_already_exists, save_misconception
+
+    scoped = _filter_exam(exam, results)
+    # {(domain, topic, wrong_answer): count}
+    pattern_counts: Counter = Counter()
+    for result in scoped:
+        for q in result.get("questions", []):
+            if q.get("is_correct"):
+                continue
+            sel = q.get("selected_answer")
+            if sel:
+                pattern_counts[(q.get("domain", ""), q.get("topic", ""), sel)] += 1
+
+    detected: list[dict] = []
+    for (domain, topic, wrong_answer), count in pattern_counts.items():
+        if count < 3:
+            continue
+        if not domain or not topic or not wrong_answer:
+            continue
+        if misconception_already_exists(exam, domain, topic, wrong_answer):
+            continue
+
+        correction = _get_misconception_correction(exam, domain, topic, wrong_answer)
+        record = {
+            "exam": exam,
+            "domain": domain,
+            "topic": topic,
+            "wrong_pattern": wrong_answer,
+            "correction": correction,
+        }
+        save_misconception(exam, domain, topic, wrong_answer, correction)
+        detected.append(record)
+
+    return detected
+
+
+def _get_misconception_correction(exam: str, domain: str, topic: str, wrong_answer: str) -> str:
+    """Call Claude to generate a targeted correction for a repeated wrong-answer pattern."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"This student has selected '{wrong_answer}' multiple times for questions "
+                    f"about the topic '{topic}' in the '{domain}' domain of the {exam} exam. "
+                    "Identify the core misconception they likely hold and generate a targeted "
+                    "3-sentence correction that addresses the root cause. "
+                    "Be direct, specific, and technical. Return only the 3 sentences, no headings."
+                ),
+            }],
+        )
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        return text.strip() or _fallback_correction(topic, wrong_answer)
+    except Exception:
+        return _fallback_correction(topic, wrong_answer)
+
+
+def _fallback_correction(topic: str, wrong_answer: str) -> str:
+    return (
+        f"You have repeatedly selected '{wrong_answer}' for questions about {topic}. "
+        "This suggests a systematic misunderstanding of the concept. "
+        "Review the official documentation and focus on distinguishing this answer from the correct one."
+    )
+
+
 def build_mobile_sync_payload(profile: dict, all_results: list[dict]) -> dict:
     exams_payload = {}
     for exam in EXAM_DOMAINS:
