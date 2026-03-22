@@ -44,6 +44,44 @@ EXAM_DOMAINS = {
         "Network Security",
         "Troubleshooting",
     ],
+    "CCNA 200-301": [
+        "Network Fundamentals",
+        "Network Access",
+        "IP Connectivity",
+        "IP Services",
+        "Security Fundamentals",
+        "Automation and Programmability",
+    ],
+    "Cisco CyberOps Associate": [
+        "Security Concepts",
+        "Security Monitoring",
+        "Host-Based Analysis",
+        "Network Intrusion Analysis",
+        "Security Policies and Procedures",
+    ],
+    "CCNP Enterprise": [
+        "Architecture",
+        "Virtualization",
+        "Infrastructure",
+        "Network Assurance",
+        "Security",
+        "Automation",
+    ],
+    "CCNP Security": [
+        "Security Concepts",
+        "Network Security",
+        "Securing the Cloud",
+        "Content Security",
+        "Endpoint Protection",
+        "Secure Network Access",
+        "Visibility and Enforcement",
+    ],
+    "CCNP Data Center": [
+        "DC Infrastructure",
+        "DC Networking",
+        "DC Compute",
+        "DC Storage Networking",
+    ],
 }
 for exam, domains in catalog_domains().items():
     EXAM_DOMAINS.setdefault(exam, domains)
