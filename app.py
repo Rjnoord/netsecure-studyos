@@ -19,10 +19,12 @@ from storage import (
     delete_active_session,
     ensure_storage,
     export_dataframe,
+    is_file_persistence_enabled,
     export_markdown,
     load_active_sessions,
     load_results,
     load_user_profile,
+    persistence_status,
     save_active_session,
     save_mobile_sync,
     save_quiz_result,
@@ -74,6 +76,20 @@ def _initialize_state() -> None:
     st.session_state.setdefault("practice_result", None)
     st.session_state.setdefault("sim_quiz", None)
     st.session_state.setdefault("sim_result", None)
+
+
+def _storage_caption() -> str:
+    return "Saved locally" if is_file_persistence_enabled() else "Saved in memory for this session"
+
+
+def _render_storage_notice() -> None:
+    mode, message = persistence_status()
+    if not message:
+        return
+    if mode == "cloud-memory":
+        st.info(message)
+    else:
+        st.warning(message)
 
 
 def _sync_mobile_data(profile: dict, all_results: list[dict]) -> None:
@@ -178,7 +194,7 @@ def _render_onboarding(profile: dict) -> dict:
     st.title("NetSecure StudyOS")
     st.caption("First-run onboarding personalizes readiness scoring, study plans, and recommendations.")
     render_section_note(
-        "Set your target exam, target date, weekly study capacity, and confidence by domain. This stays local and tunes the app around your actual plan."
+        "Set your target exam, target date, weekly study capacity, and confidence by domain. This tunes the app around your actual plan."
     )
 
     with st.form("first_run_onboarding", clear_on_submit=False):
@@ -226,7 +242,7 @@ def _render_passcode_setup(profile: dict) -> dict:
     st.title("NetSecure StudyOS")
     st.caption("Set a local passcode before enabling broader access.")
     render_section_note(
-        "This passcode gate protects the app before you share it on your LAN or behind a public URL. The passcode is stored locally as a salted hash."
+        f"This passcode gate protects the app before you share it on your LAN or behind a public URL. The passcode is {_storage_caption().lower()} as a salted hash."
     )
     with st.form("passcode_setup_form", clear_on_submit=False):
         passcode = st.text_input("Create passcode", type="password")
@@ -503,7 +519,7 @@ def _render_quiz_form(quiz_key: str, result_key: str, title: str, save_mode: str
 
     insight_cols = st.columns(3)
     with insight_cols[0]:
-        render_metric_card("Progress", f"{answered_count}/{len(questions)}", "Saved locally while you work")
+        render_metric_card("Progress", f"{answered_count}/{len(questions)}", f"{_storage_caption()} while you work")
     with insight_cols[1]:
         render_metric_card("Pace", f"{pace:.1f}/min", "Current answering speed")
     with insight_cols[2]:
@@ -512,14 +528,14 @@ def _render_quiz_form(quiz_key: str, result_key: str, title: str, save_mode: str
     if len(questions) >= 100:
         render_insight_card(
             "Fatigue Simulation",
-            "This is the full endurance mode. Answers persist locally, so you can resume the session if you need to step away.",
+            f"This is the full endurance mode. Answers are {_storage_caption().lower()}, so you can resume the session if you need to step away.",
             pills=["100-question load", "Resume supported", "Recovery summary enabled"],
             warning=True,
         )
     elif len(questions) >= 75:
         render_insight_card(
             "Long Session",
-            "You are in a higher-volume drill. Progress, pacing, and in-progress answers are all stored locally.",
+            f"You are in a higher-volume drill. Progress, pacing, and in-progress answers are {_storage_caption().lower()}.",
             pills=["Pacing matters", "Resume supported"],
         )
 
@@ -551,7 +567,7 @@ def _render_quiz_form(quiz_key: str, result_key: str, title: str, save_mode: str
             for index, question in enumerate(questions, start=1)
         }
         _persist_session(quiz_key)
-        st.success("Session progress saved locally. Use the sidebar resume section to continue later.")
+        st.success(f"Session progress saved. Use the sidebar resume section to continue later. {_storage_caption()}.")
 
     if submitted:
         final_answers = {
@@ -590,14 +606,17 @@ def _render_quiz_form(quiz_key: str, result_key: str, title: str, save_mode: str
 def _export_section(selected_exam: str, all_results: list[dict], exam_results: list[dict]) -> None:
     st.markdown("### Power BI Export Prep")
     render_section_note(
-        "Use these exports to feed Power BI locally. Files are written to data/exports so refreshes can point at a stable folder."
+        "Use these exports to feed Power BI locally. When local file persistence is available, files are written to data/exports so refreshes can point at a stable folder."
     )
     c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("Export Quiz History", use_container_width=True):
             frame = build_quiz_history_frame(all_results)
             path = export_dataframe(frame, "quiz_history.csv")
-            st.success(f"Saved {path.name} to data/exports.")
+            if path:
+                st.success(f"Saved {path.name} to data/exports.")
+            else:
+                st.warning("Quiz history export is unavailable in cloud/demo mode because local file writes are disabled.")
     with c2:
         if st.button(f"Export {selected_exam} Weak Topics", use_container_width=True):
             frame = pd.DataFrame(
@@ -613,7 +632,10 @@ def _export_section(selected_exam: str, all_results: list[dict], exam_results: l
                 ],
             )
             path = export_dataframe(frame, f"weak_topics_{selected_exam.lower().replace('+', 'plus').replace(' ', '_')}.csv")
-            st.success(f"Saved {path.name} to data/exports.")
+            if path:
+                st.success(f"Saved {path.name} to data/exports.")
+            else:
+                st.warning("Weak-topic export is unavailable in cloud/demo mode because local file writes are disabled.")
     with c3:
         if st.button(f"Export {selected_exam} Readiness History", use_container_width=True):
             frame = readiness_history(selected_exam, exam_results)
@@ -621,7 +643,10 @@ def _export_section(selected_exam: str, all_results: list[dict], exam_results: l
                 frame,
                 f"readiness_history_{selected_exam.lower().replace('+', 'plus').replace(' ', '_')}.csv",
             )
-            st.success(f"Saved {path.name} to data/exports.")
+            if path:
+                st.success(f"Saved {path.name} to data/exports.")
+            else:
+                st.warning("Readiness-history export is unavailable in cloud/demo mode because local file writes are disabled.")
 
     st.markdown("### Markdown Study Summary")
     render_section_note(
@@ -630,7 +655,10 @@ def _export_section(selected_exam: str, all_results: list[dict], exam_results: l
     if st.button("Export Markdown Study Summary", use_container_width=True):
         content = build_markdown_study_summary(all_results, load_user_profile())
         path = export_markdown(content, "study_summary.md")
-        st.success(f"Saved {path.name} to data/exports.")
+        if path:
+            st.success(f"Saved {path.name} to data/exports.")
+        else:
+            st.warning("Markdown export is unavailable in cloud/demo mode because local file writes are disabled.")
 
 
 _initialize_state()
@@ -645,6 +673,7 @@ profile = _refresh_profile()
 
 st.title("NetSecure StudyOS")
 st.caption("A local-first study system for networking, cloud, and security certification prep.")
+_render_storage_notice()
 
 with st.sidebar:
     st.header("Session Setup")
@@ -746,7 +775,7 @@ with dashboard_tab:
     with metrics[0]:
         render_metric_card("Readiness Score", f"{current_readiness:.1f}", "Personalized by profile and history")
     with metrics[1]:
-        render_metric_card("Total Attempts", str(len(exam_results)), "Saved locally")
+        render_metric_card("Total Attempts", str(len(exam_results)), _storage_caption())
     with metrics[2]:
         render_metric_card("Latest Score", f"{current_latest_score:.1f}%", "Most recent attempt")
     with metrics[3]:

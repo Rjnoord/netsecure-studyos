@@ -51,6 +51,15 @@ The app still runs locally on `http://localhost:8501`, and `.streamlit/config.to
 
 On first protected launch, the app now requires you to create a local passcode before broader sharing.
 
+## Persistence Modes
+
+- Local Mac run: `streamlit run app.py` keeps JSON persistence enabled for the study profile, quiz history, saved sessions, exports, and mobile sync files under `data/`.
+- Streamlit Community Cloud: the app automatically switches to demo mode and keeps profile/results/session data in memory for the current browser session instead of writing local JSON files.
+- If file persistence becomes unavailable unexpectedly, the app degrades to the same in-memory behavior and shows a warning instead of crashing.
+- Optional overrides:
+  - `NETSECURE_STUDYOS_FORCE_CLOUD_MODE=1` forces memory/demo mode.
+  - `NETSECURE_STUDYOS_FORCE_LOCAL_PERSISTENCE=1` forces local file persistence checks.
+
 ## Deployment
 
 Deployment assets are included in [DEPLOYMENT.md](/Users/rjnoord/Desktop/netsecure-studyos/DEPLOYMENT.md) and the [deploy](/Users/rjnoord/Desktop/netsecure-studyos/deploy) folder.
@@ -99,6 +108,6 @@ These are written locally so Power BI can point at a stable folder for refresh.
 ## Notes
 
 - The Streamlit app remains fully local with no external API calls.
-- On first launch, the app walks through a local onboarding setup and saves the study profile to `data/user_profile.json`.
-- The mobile app now reads the shared local sync snapshot in `mobile_app/data/mobile_sync.json`.
-- Data directories are created automatically on startup.
+- On first local launch, the app walks through onboarding and saves the study profile to `data/user_profile.json`.
+- The mobile app reads the shared local sync snapshot in `mobile_app/data/mobile_sync.json` when local file persistence is available.
+- Data directories are created automatically on startup for local runs.
