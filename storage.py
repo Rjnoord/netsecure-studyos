@@ -106,6 +106,32 @@ CREATE TABLE IF NOT EXISTS linkedin_posts (
     last_copied_at TEXT,
     UNIQUE (milestone_key, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS daily_challenges (
+    challenge_date  TEXT NOT NULL,
+    user_id         INTEGER NOT NULL DEFAULT 1,
+    score           INTEGER NOT NULL DEFAULT 0,
+    perfect         INTEGER NOT NULL DEFAULT 0,
+    completed_at    TEXT NOT NULL,
+    PRIMARY KEY (challenge_date, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS challenge_streak (
+    user_id              INTEGER PRIMARY KEY DEFAULT 1,
+    current_streak       INTEGER NOT NULL DEFAULT 0,
+    longest_streak       INTEGER NOT NULL DEFAULT 0,
+    last_challenge_date  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS boss_battles (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id          INTEGER NOT NULL DEFAULT 1,
+    exam             TEXT NOT NULL,
+    score            INTEGER NOT NULL,
+    total_questions  INTEGER NOT NULL DEFAULT 10,
+    hiring_rec       TEXT,
+    completed_at     TEXT NOT NULL
+);
 """
 
 LEVEL_THRESHOLDS: list[tuple[int, str]] = [
@@ -158,6 +184,9 @@ def _ensure_memory_defaults() -> dict:
     state.setdefault("_streak_updated_date", None)
     state.setdefault("resume", None)
     state.setdefault("linkedin_posts", [])
+    state.setdefault("daily_challenges", {})
+    state.setdefault("challenge_streak", {"current_streak": 0, "longest_streak": 0, "last_challenge_date": None})
+    state.setdefault("boss_battles", [])
     return state
 
 
@@ -980,3 +1009,232 @@ def get_linkedin_total_copies(user_id: int = 1) -> int:
         except sqlite3.Error:
             pass
     return sum(p.get("copy_count", 0) for p in state["linkedin_posts"])
+
+
+# ---------------------------------------------------------------------------
+# Daily challenge system
+# ---------------------------------------------------------------------------
+
+def get_daily_challenge(challenge_date: str, user_id: int = 1) -> dict | None:
+    """Return completion record for a date or None if not completed."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT score, perfect, completed_at FROM daily_challenges"
+                    " WHERE challenge_date = ? AND user_id = ?",
+                    (challenge_date, user_id),
+                ).fetchone()
+            if row:
+                return {
+                    "score": row["score"],
+                    "perfect": bool(row["perfect"]),
+                    "completed_at": row["completed_at"],
+                }
+        except sqlite3.Error:
+            pass
+    return state["daily_challenges"].get(challenge_date)
+
+
+def save_daily_challenge(challenge_date: str, score: int, perfect: bool, user_id: int = 1) -> None:
+    """Record a completed daily challenge."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    record = {"score": score, "perfect": perfect, "completed_at": now}
+    state["daily_challenges"][challenge_date] = record
+    if not is_file_persistence_enabled():
+        return
+    try:
+        with _db_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO daily_challenges"
+                " (challenge_date, user_id, score, perfect, completed_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (challenge_date, user_id, score, int(perfect), now),
+            )
+    except (sqlite3.Error, OSError):
+        pass
+
+
+def get_challenge_streak(user_id: int = 1) -> dict:
+    """Return daily challenge streak data."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT current_streak, longest_streak, last_challenge_date"
+                    " FROM challenge_streak WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+            if row:
+                return {
+                    "current_streak": row["current_streak"],
+                    "longest_streak": row["longest_streak"],
+                    "last_challenge_date": row["last_challenge_date"],
+                }
+        except sqlite3.Error:
+            pass
+    return dict(state.get("challenge_streak", {
+        "current_streak": 0, "longest_streak": 0, "last_challenge_date": None
+    }))
+
+
+def update_challenge_streak(user_id: int = 1) -> dict:
+    """Increment or reset the daily challenge streak. Call after saving a challenge."""
+    today = date.today().isoformat()
+    state = _ensure_memory_defaults()
+    streak = get_challenge_streak(user_id)
+    last = streak.get("last_challenge_date")
+
+    if last == today:
+        return streak  # Already updated today
+
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    current = streak.get("current_streak", 0) + 1 if last == yesterday else 1
+    longest = max(streak.get("longest_streak", 0), current)
+
+    updated = {"current_streak": current, "longest_streak": longest, "last_challenge_date": today}
+    state["challenge_streak"] = updated
+
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                conn.execute(
+                    "INSERT INTO challenge_streak"
+                    " (user_id, current_streak, longest_streak, last_challenge_date)"
+                    " VALUES (?, ?, ?, ?)"
+                    " ON CONFLICT(user_id) DO UPDATE SET"
+                    "   current_streak = excluded.current_streak,"
+                    "   longest_streak = excluded.longest_streak,"
+                    "   last_challenge_date = excluded.last_challenge_date",
+                    (user_id, current, longest, today),
+                )
+        except (sqlite3.Error, OSError):
+            pass
+    return updated
+
+
+def get_challenge_leaderboard(user_id: int = 1) -> dict | None:
+    """Return aggregated daily challenge stats for leaderboard display."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) as completed, COALESCE(SUM(score), 0) as total_pts,"
+                    " COALESCE(SUM(perfect), 0) as perfects"
+                    " FROM daily_challenges WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+            if row and row["completed"]:
+                streak = get_challenge_streak(user_id)
+                return {
+                    "completed": row["completed"],
+                    "total_pts": row["total_pts"],
+                    "perfects": row["perfects"],
+                    "current_streak": streak.get("current_streak", 0),
+                    "longest_streak": streak.get("longest_streak", 0),
+                }
+        except sqlite3.Error:
+            pass
+    challenges = state.get("daily_challenges", {})
+    if not challenges:
+        return None
+    streak = get_challenge_streak(user_id)
+    return {
+        "completed": len(challenges),
+        "total_pts": sum(v.get("score", 0) for v in challenges.values()),
+        "perfects": sum(1 for v in challenges.values() if v.get("perfect")),
+        "current_streak": streak.get("current_streak", 0),
+        "longest_streak": streak.get("longest_streak", 0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Boss battle system
+# ---------------------------------------------------------------------------
+
+def save_boss_battle(exam: str, score: int, hiring_rec: str, user_id: int = 1) -> None:
+    """Persist a completed boss battle."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    record = {
+        "exam": exam, "score": score, "total_questions": 10,
+        "hiring_rec": hiring_rec, "completed_at": now, "user_id": user_id,
+    }
+    state["boss_battles"].append(record)
+    if not is_file_persistence_enabled():
+        return
+    try:
+        with _db_connection() as conn:
+            conn.execute(
+                "INSERT INTO boss_battles (user_id, exam, score, total_questions, hiring_rec, completed_at)"
+                " VALUES (?, ?, ?, 10, ?, ?)",
+                (user_id, exam, score, hiring_rec, now),
+            )
+    except (sqlite3.Error, OSError):
+        pass
+
+
+def get_boss_battle_history(limit: int = 5, user_id: int = 1) -> list[dict]:
+    """Return the last N boss battles, newest first."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                rows = conn.execute(
+                    "SELECT exam, score, total_questions, hiring_rec, completed_at"
+                    " FROM boss_battles WHERE user_id = ?"
+                    " ORDER BY completed_at DESC LIMIT ?",
+                    (user_id, limit),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error:
+            pass
+    battles = [b for b in state.get("boss_battles", []) if b.get("user_id", 1) == user_id]
+    return sorted(battles, key=lambda b: b.get("completed_at", ""), reverse=True)[:limit]
+
+
+def get_boss_battle_stats(user_id: int = 1) -> dict:
+    """Return aggregate boss battle statistics."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) as total, COALESCE(MAX(score), 0) as best_score,"
+                    " COALESCE(SUM(CASE WHEN score >= 8 THEN 1 ELSE 0 END), 0) as high_scores,"
+                    " MAX(hiring_rec) as best_rec"
+                    " FROM boss_battles WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+            if row:
+                return {
+                    "total": row["total"] or 0,
+                    "best_score": row["best_score"] or 0,
+                    "high_scores": row["high_scores"] or 0,
+                    "best_rec": row["best_rec"] or "",
+                }
+        except sqlite3.Error:
+            pass
+    battles = [b for b in state.get("boss_battles", []) if b.get("user_id", 1) == user_id]
+    if not battles:
+        return {"total": 0, "best_score": 0, "high_scores": 0, "best_rec": ""}
+    return {
+        "total": len(battles),
+        "best_score": max(b.get("score", 0) for b in battles),
+        "high_scores": sum(1 for b in battles if b.get("score", 0) >= 8),
+        "best_rec": next(
+            (b["hiring_rec"] for b in battles if b.get("hiring_rec") == "Strong Yes"),
+            battles[0].get("hiring_rec", "") if battles else "",
+        ),
+    }

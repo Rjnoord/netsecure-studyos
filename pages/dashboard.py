@@ -10,6 +10,8 @@ from storage import (
     export_dataframe,
     export_markdown,
     get_badges,
+    get_boss_battle_history,
+    get_boss_battle_stats,
     get_level_info,
     get_streak,
     load_user_profile,
@@ -133,6 +135,30 @@ def _export_section(selected_exam: str, all_results: list[dict], exam_results: l
             st.warning("Markdown export is unavailable in cloud/demo mode because local file writes are disabled.")
 
 
+def _render_boss_battle_history() -> None:
+    stats = get_boss_battle_stats()
+    history = get_boss_battle_history(limit=5)
+    if not history:
+        return
+
+    st.markdown("### Boss Battle History")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Battles Completed", stats["total"])
+    col2.metric("Best Score", f"{stats['best_score']}/10")
+    col3.metric("Best Recommendation", stats["best_rec"] or "—")
+
+    rows = []
+    for b in history:
+        rows.append({
+            "Exam": b.get("exam", ""),
+            "Score": f"{b.get('score', 0)}/{b.get('total_questions', 10)}",
+            "Recommendation": b.get("hiring_rec") or "—",
+            "Date": (b.get("completed_at") or "")[:10],
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.divider()
+
+
 def render(ctx: dict) -> None:
     selected_exam = ctx["selected_exam"]
     exam_results = ctx["exam_results"]
@@ -241,4 +267,6 @@ def render(ctx: dict) -> None:
             use_container_width=True,
             hide_index=True,
         )
+
+    _render_boss_battle_history()
     _export_section(selected_exam, all_results, exam_results)
