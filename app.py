@@ -49,6 +49,7 @@ import pages.review_queue as page_review_queue
 import pages.labs as page_labs
 import pages.resume as page_resume
 import pages.skill_tree as page_skill_tree
+import pages.career as page_career
 
 
 st.set_page_config(page_title="NetSecure StudyOS", page_icon="🧠", layout="wide")
@@ -434,9 +435,10 @@ tabs = st.tabs(
         "Home Labs",
         "Resume Builder",
         "Skill Tree",
+        "Career & Salary",
     ]
 )
-dashboard_tab, quiz_tab, simulator_tab, weak_tab, plan_tab, cheat_tab, prediction_tab, review_tab, labs_tab, resume_tab, skill_tree_tab = tabs
+dashboard_tab, quiz_tab, simulator_tab, weak_tab, plan_tab, cheat_tab, prediction_tab, review_tab, labs_tab, resume_tab, skill_tree_tab, career_tab = tabs
 
 with dashboard_tab:
     page_dashboard.render(ctx)
@@ -470,3 +472,6 @@ with resume_tab:
 
 with skill_tree_tab:
     page_skill_tree.render(ctx)
+
+with career_tab:
+    page_career.render(ctx)
