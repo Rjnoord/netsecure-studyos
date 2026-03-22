@@ -4,6 +4,7 @@ from datetime import datetime
 
 import streamlit as st
 
+from gates import get_labs_per_cert_limit, is_feature_allowed, require_feature
 from labs import get_home_labs, grade_lab_with_ai, lab_note_feedback
 from linkedin import TRIGGER_LABELS, generate_linkedin_post, get_next_peak_time
 from storage import (
@@ -113,6 +114,8 @@ def _render_linkedin_section(
     profile: dict,
 ) -> None:
     """Render the 📣 Share Your Win LinkedIn section after a graded lab."""
+    if not is_feature_allowed("linkedin_poster"):
+        return  # silently hidden for free tier
     score = int(existing_grade.get("score", 0))
     if score < 7:
         return
@@ -230,6 +233,16 @@ def render(ctx: dict) -> None:
     labs = get_home_labs(selected_exam)
     if not labs:
         st.info("No home labs are defined for this exam yet.")
+
+    # Apply labs-per-cert limit for free tier
+    lab_limit = get_labs_per_cert_limit()
+    if lab_limit is not None and len(labs) > lab_limit:
+        st.info(
+            f"Free tier: showing {lab_limit} of {len(labs)} labs. "
+            "Upgrade to Pro to unlock all labs with AI grading."
+        )
+        labs = labs[:lab_limit]
+
     for index, lab in enumerate(labs, start=1):
         progress = profile.get("lab_progress", {}).get(selected_exam, {}).get(lab["id"], {})
         completed_steps = progress.get("completed_steps", [])
@@ -277,10 +290,14 @@ def render(ctx: dict) -> None:
 
                 # Call the AI grader when transitioning to complete or when a
                 # previous grade attempt failed (existing_grade is None).
+                # Gated to Pro tier — free users still save progress without AI grade.
                 ai_grade = None
                 if newly_passing and (not was_complete_before or existing_grade is None):
-                    with st.spinner("Grading your lab with AI..."):
-                        ai_grade = grade_lab_with_ai(lab, selected_exam, note_value)
+                    if is_feature_allowed("ai_lab_grader"):
+                        with st.spinner("Grading your lab with AI..."):
+                            ai_grade = grade_lab_with_ai(lab, selected_exam, note_value)
+                    else:
+                        st.info("AI Lab Grading is a Pro feature. Upgrade to get personalized resume bullets and scores.")
 
                 profile = _save_lab_progress(
                     profile,

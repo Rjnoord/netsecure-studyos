@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from exams import EXAM_DOMAINS
+from gates import require_feature
 from storage import add_xp, award_badge
 from utils import render_section_note
 
@@ -725,6 +726,9 @@ def render(ctx: dict) -> None:
         "Live market data, AI-powered gap analysis, and salary projections "
         "built around your actual cert progress."
     )
+
+    if not require_feature("career_dashboard"):
+        return
 
     _render_market_value(readiness_map)
 

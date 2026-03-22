@@ -10,9 +10,12 @@ import streamlit as st
 
 from auth import hash_passcode, is_locked_until, lockout_expiry_iso, passcode_feedback, verify_passcode
 from exams import EXAM_DOMAINS
+from gates import get_daily_question_limit, get_tier_config, is_exam_allowed
 from storage import (
     delete_active_session,
     ensure_storage,
+    get_daily_question_count,
+    get_user_tier,
     is_file_persistence_enabled,
     load_active_sessions,
     load_results,
@@ -51,6 +54,7 @@ import pages.resume as page_resume
 import pages.skill_tree as page_skill_tree
 import pages.career as page_career
 import pages.daily_challenge as page_daily_challenge
+import pages.upgrade as page_upgrade
 
 
 st.set_page_config(page_title="NetSecure StudyOS", page_icon="🧠", layout="wide")
@@ -343,6 +347,19 @@ with st.sidebar:
     st.write(f"{readiness_value:.1f}/100")
     st.caption("Practice mode is better for weak-topic cleanup. Simulator mode is better for pacing, fatigue, and score validation.")
     st.divider()
+    # Tier indicator
+    tier = get_user_tier()
+    if tier == "pro":
+        st.success("✅ Pro Member")
+    else:
+        limit = get_daily_question_limit()
+        used = get_daily_question_count()
+        remaining = max(0, (limit or 0) - used)
+        st.warning(f"⚡ Free Tier — {remaining}/{limit} questions left today")
+        if st.button("Upgrade to Pro →", use_container_width=True, type="primary", key="sidebar_upgrade_btn"):
+            st.session_state["open_upgrade_tab"] = True
+            st.rerun()
+    st.divider()
     _render_profile_editor(profile)
     st.divider()
     _render_share_settings(profile)
@@ -376,6 +393,23 @@ render_brand_ribbon(
     ]
 )
 render_hero_panel(selected_exam, selected_mode, current_readiness, current_latest_score, len(exam_results))
+
+# Daily question limit banner for free tier
+_tier = get_user_tier()
+if _tier == "free":
+    _limit = get_daily_question_limit()
+    _used = get_daily_question_count()
+    _remaining = max(0, (_limit or 0) - _used)
+    if _remaining == 0:
+        st.error(
+            f"Daily question limit reached ({_limit}/day on Free tier). "
+            "Come back tomorrow or **Upgrade to Pro** for unlimited questions."
+        )
+    else:
+        st.info(
+            f"Free tier: **{_remaining} of {_limit} questions** remaining today. "
+            "Resets at midnight. Upgrade for unlimited access."
+        )
 render_showcase_strip(
     [
         {
@@ -423,24 +457,28 @@ ctx = {
 # Tab routing
 # ---------------------------------------------------------------------------
 
-tabs = st.tabs(
-    [
-        "Dashboard",
-        "Quiz Generator",
-        "Exam Simulator",
-        "Weak Topics",
-        "Study Plan",
-        "Cheat Sheets",
-        "Predicted Score",
-        "Review Queue",
-        "Home Labs",
-        "Resume Builder",
-        "Skill Tree",
-        "Career & Salary",
-        "Daily Challenge",
-    ]
-)
-dashboard_tab, quiz_tab, simulator_tab, weak_tab, plan_tab, cheat_tab, prediction_tab, review_tab, labs_tab, resume_tab, skill_tree_tab, career_tab, daily_tab = tabs
+_TAB_NAMES = [
+    "Dashboard",
+    "Quiz Generator",
+    "Exam Simulator",
+    "Weak Topics",
+    "Study Plan",
+    "Cheat Sheets",
+    "Predicted Score",
+    "Review Queue",
+    "Home Labs",
+    "Resume Builder",
+    "Skill Tree",
+    "Career & Salary",
+    "Daily Challenge",
+    "Upgrade ⚡",
+]
+tabs = st.tabs(_TAB_NAMES)
+(
+    dashboard_tab, quiz_tab, simulator_tab, weak_tab, plan_tab, cheat_tab,
+    prediction_tab, review_tab, labs_tab, resume_tab, skill_tree_tab,
+    career_tab, daily_tab, upgrade_tab,
+) = tabs
 
 with dashboard_tab:
     page_dashboard.render(ctx)
@@ -480,3 +518,6 @@ with career_tab:
 
 with daily_tab:
     page_daily_challenge.render(ctx)
+
+with upgrade_tab:
+    page_upgrade.render(ctx)

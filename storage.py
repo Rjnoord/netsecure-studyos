@@ -157,6 +157,19 @@ CREATE TABLE IF NOT EXISTS misconceptions (
     resolved      INTEGER NOT NULL DEFAULT 0,
     resolved_at   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS daily_question_counts (
+    count_date  TEXT NOT NULL,
+    user_id     INTEGER NOT NULL DEFAULT 1,
+    count       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (count_date, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS waitlist (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    email     TEXT NOT NULL UNIQUE,
+    joined_at TEXT NOT NULL
+);
 """
 
 LEVEL_THRESHOLDS: list[tuple[int, str]] = [
@@ -214,6 +227,8 @@ def _ensure_memory_defaults() -> dict:
     state.setdefault("boss_battles", [])
     state.setdefault("debate_sessions", [])
     state.setdefault("misconceptions", [])
+    state.setdefault("daily_question_counts", {})
+    state.setdefault("waitlist", [])
     return state
 
 
@@ -1474,3 +1489,130 @@ def misconception_already_exists(exam: str, domain: str, topic: str, wrong_patte
         and not m.get("resolved")
         for m in state.get("misconceptions", [])
     )
+
+
+# ---------------------------------------------------------------------------
+# Tier system
+# ---------------------------------------------------------------------------
+
+def get_user_tier(user_id: int = 1) -> str:
+    """Return 'free' or 'pro'. Reads from user profile JSON."""
+    ensure_storage()
+    profile = load_user_profile()
+    return profile.get("tier", "free")
+
+
+def set_user_tier(tier: str, user_id: int = 1) -> None:
+    """Persist the user tier ('free' or 'pro') in the user profile."""
+    ensure_storage()
+    profile = load_user_profile()
+    profile["tier"] = tier
+    save_user_profile(profile)
+
+
+# ---------------------------------------------------------------------------
+# Daily question count
+# ---------------------------------------------------------------------------
+
+def get_daily_question_count(user_id: int = 1) -> int:
+    """Return the number of questions answered today."""
+    ensure_storage()
+    today = date.today().isoformat()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT count FROM daily_question_counts"
+                    " WHERE count_date = ? AND user_id = ?",
+                    (today, user_id),
+                ).fetchone()
+            return int(row["count"]) if row else 0
+        except sqlite3.Error:
+            pass
+    counts = state.get("daily_question_counts", {})
+    entry = counts.get(today, {})
+    return entry.get(user_id, 0) if isinstance(entry, dict) else 0
+
+
+def increment_daily_question_count(amount: int = 1, user_id: int = 1) -> int:
+    """Add to today's question count. Returns new total for today."""
+    ensure_storage()
+    today = date.today().isoformat()
+    state = _ensure_memory_defaults()
+
+    # Update memory
+    counts = state.setdefault("daily_question_counts", {})
+    if today not in counts:
+        counts[today] = {}
+    if isinstance(counts[today], dict):
+        counts[today][user_id] = counts[today].get(user_id, 0) + amount
+        new_total = counts[today][user_id]
+    else:
+        new_total = amount
+
+    if not is_file_persistence_enabled():
+        return new_total
+    try:
+        with _db_connection() as conn:
+            conn.execute(
+                "INSERT INTO daily_question_counts (count_date, user_id, count)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT(count_date, user_id) DO UPDATE SET"
+                "   count = count + ?",
+                (today, user_id, amount, amount),
+            )
+        row = conn.execute(
+            "SELECT count FROM daily_question_counts WHERE count_date = ? AND user_id = ?",
+            (today, user_id),
+        ).fetchone()
+        return int(row["count"]) if row else new_total
+    except (sqlite3.Error, OSError):
+        return new_total
+
+
+# ---------------------------------------------------------------------------
+# Waitlist
+# ---------------------------------------------------------------------------
+
+def add_waitlist_email(email: str) -> bool:
+    """Add email to waitlist. Returns True if newly added, False if duplicate."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    email = email.strip().lower()
+    now = datetime.now().isoformat()
+
+    # Check memory
+    if any(e.get("email") == email for e in state.get("waitlist", [])):
+        return False
+    state["waitlist"].append({"email": email, "joined_at": now})
+
+    if not is_file_persistence_enabled():
+        return True
+    try:
+        with _db_connection() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO waitlist (email, joined_at) VALUES (?, ?)",
+                (email, now),
+            )
+            # Check if anything was inserted
+            row = conn.execute(
+                "SELECT changes() as n"
+            ).fetchone()
+            return bool(row and row["n"])
+    except (sqlite3.Error, OSError):
+        return True
+
+
+def get_waitlist_count() -> int:
+    """Return total number of waitlist signups."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute("SELECT COUNT(*) as n FROM waitlist").fetchone()
+            return int(row["n"]) if row else 0
+        except sqlite3.Error:
+            pass
+    return len(state.get("waitlist", []))

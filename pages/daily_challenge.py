@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from exams import EXAM_DOMAINS, get_question_pool
+from gates import is_feature_allowed
 from storage import (
     add_xp,
     award_badge,
@@ -136,6 +137,9 @@ def _render_review(questions: list[dict], answers: dict) -> None:
 
 def _render_leaderboard(username: str) -> None:
     st.markdown("### Global Leaderboard")
+    if not is_feature_allowed("daily_challenge_leaderboard"):
+        st.info("The leaderboard is a Pro feature. Upgrade to see your global ranking and compete with other players.")
+        return
     stats = get_challenge_leaderboard()
     if not stats:
         st.info("Complete today's challenge to appear on the leaderboard!")

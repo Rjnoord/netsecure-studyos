@@ -8,14 +8,23 @@ from datetime import datetime, timedelta
 import streamlit as st
 
 from exams import EXAM_DOMAINS, get_question_pool
+from gates import (
+    get_daily_question_limit,
+    is_exam_allowed,
+    is_feature_allowed,
+    require_feature,
+    show_upgrade_prompt,
+)
 from question_engine import generate_quiz
 from storage import (
     add_xp,
     award_badge,
     get_badges,
     get_boss_battle_stats,
+    get_daily_question_count,
     get_debate_history,
     get_debate_stats,
+    increment_daily_question_count,
     save_boss_battle,
     save_debate_session,
 )
@@ -751,6 +760,30 @@ def render(ctx: dict) -> None:
     render_section_note(
         "Use shorter focused sets when you need reps. The recommendation engine now lowers priority for topics that are already on a correct-answer streak."
     )
+
+    # ── Exam access gate ──────────────────────────────────────────────────────
+    if not is_exam_allowed(selected_exam):
+        st.warning(
+            f"**{selected_exam}** is a Pro cert. Free tier includes A+, Network+, and Security+. "
+            "Select one of those from the sidebar, or upgrade to access all 50+ certs."
+        )
+        show_upgrade_prompt("allowed_exams" if False else "skill_tree_full")
+        return
+
+    # ── Daily question limit banner ───────────────────────────────────────────
+    limit = get_daily_question_limit()
+    used_today = get_daily_question_count()
+    if limit is not None:
+        remaining = max(0, limit - used_today)
+        if remaining == 0:
+            st.error(
+                f"Daily question limit reached ({limit}/day on Free tier). "
+                "Come back tomorrow or upgrade to Pro for unlimited questions."
+            )
+            show_upgrade_prompt("daily_question_limit" if False else "ai_tutor")
+            return
+        st.info(f"Free tier: {remaining} questions remaining today (resets at midnight).")
+
     practice_domains = st.multiselect(
         "Select exam domains",
         EXAM_DOMAINS[selected_exam],
@@ -762,20 +795,35 @@ def render(ctx: dict) -> None:
         if not practice_domains:
             st.warning("Select at least one domain before generating a practice quiz.")
         else:
+            # Cap question count for free tier
+            count = selected_count
+            if limit is not None:
+                count = min(count, max(0, limit - used_today))
+                if count <= 0:
+                    st.error("No questions remaining today. Upgrade for unlimited access.")
+                    return
+                if count < selected_count:
+                    st.warning(f"Quiz trimmed to {count} questions to stay within your daily limit.")
             st.session_state["practice_result"] = None
             st.session_state["practice_quiz"] = _build_quiz_session(
                 selected_exam,
-                generate_quiz(selected_exam, practice_domains, selected_count, "practice"),
+                generate_quiz(selected_exam, practice_domains, count, "practice"),
                 timed_mode,
                 int(minutes) if timed_mode else None,
                 "Practice Quiz",
                 "practice",
             )
             _persist_session("practice_quiz")
+            # Track question count for free tier
+            if limit is not None:
+                increment_daily_question_count(count)
+
     _render_quiz_form("practice_quiz", "practice_result", "Practice Quiz", "practice", False)
 
-    # Debate Mode section
-    _render_debate_mode(selected_exam)
+    # Debate Mode section — Pro only
+    if require_feature("debate_mode"):
+        _render_debate_mode(selected_exam)
 
-    # Boss Battle section
-    _render_boss_battle(selected_exam, current_readiness)
+    # Boss Battle section — Pro only
+    if require_feature("boss_battle"):
+        _render_boss_battle(selected_exam, current_readiness)

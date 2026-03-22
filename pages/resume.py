@@ -19,6 +19,7 @@ from storage import (
     save_linkedin_post,
     save_resume,
 )
+from gates import require_feature
 from utils import render_section_note
 
 
@@ -325,6 +326,9 @@ def render(ctx: dict) -> None:
         "AI-personalized bullets from graded labs are used automatically; "
         "static fallback bullets are used for ungraded labs."
     )
+
+    if not require_feature("resume_builder"):
+        return
 
     # ── Detect new labs completed since last generation ───────────────────
     current_lab_count = _count_completed_labs(profile)
