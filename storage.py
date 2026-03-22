@@ -93,6 +93,19 @@ CREATE TABLE IF NOT EXISTS resume (
     user_inputs  TEXT NOT NULL,
     generated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS linkedin_posts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL DEFAULT 1,
+    trigger        TEXT NOT NULL,
+    milestone_key  TEXT NOT NULL,
+    post_text      TEXT NOT NULL,
+    user_data      TEXT NOT NULL,
+    generated_at   TEXT NOT NULL,
+    copy_count     INTEGER NOT NULL DEFAULT 0,
+    last_copied_at TEXT,
+    UNIQUE (milestone_key, user_id)
+);
 """
 
 LEVEL_THRESHOLDS: list[tuple[int, str]] = [
@@ -144,6 +157,7 @@ def _ensure_memory_defaults() -> dict:
     state.setdefault("badges", [])
     state.setdefault("_streak_updated_date", None)
     state.setdefault("resume", None)
+    state.setdefault("linkedin_posts", [])
     return state
 
 
@@ -805,3 +819,164 @@ def load_resume() -> dict | None:
         except (sqlite3.Error, json.JSONDecodeError):
             pass
     return state.get("resume")
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn post storage
+# ---------------------------------------------------------------------------
+
+def save_linkedin_post(
+    trigger: str,
+    milestone_key: str,
+    post_text: str,
+    user_data: dict,
+    user_id: int = 1,
+) -> int | None:
+    """Persist a generated LinkedIn post.  Returns the row id or None."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    record = {
+        "id": len(state["linkedin_posts"]) + 1,
+        "user_id": user_id,
+        "trigger": trigger,
+        "milestone_key": milestone_key,
+        "post_text": post_text,
+        "user_data": user_data,
+        "generated_at": now,
+        "copy_count": 0,
+        "last_copied_at": None,
+    }
+    # Avoid duplicate milestone in memory
+    existing_keys = {p["milestone_key"] for p in state["linkedin_posts"]}
+    if milestone_key not in existing_keys:
+        state["linkedin_posts"].append(record)
+
+    if not is_file_persistence_enabled():
+        return record["id"]
+
+    try:
+        with _db_connection() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO linkedin_posts"
+                " (user_id, trigger, milestone_key, post_text, user_data, generated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, trigger, milestone_key, post_text, json.dumps(user_data), now),
+            )
+            return cur.lastrowid if cur.lastrowid else None
+    except (sqlite3.Error, OSError):
+        return None
+
+
+def get_linkedin_post_for_milestone(
+    milestone_key: str, user_id: int = 1
+) -> dict | None:
+    """Return the saved post dict for a milestone key, or None."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT id, trigger, milestone_key, post_text, user_data,"
+                    "       generated_at, copy_count, last_copied_at"
+                    " FROM linkedin_posts WHERE milestone_key = ? AND user_id = ?",
+                    (milestone_key, user_id),
+                ).fetchone()
+            if row:
+                return {
+                    "id": row["id"],
+                    "trigger": row["trigger"],
+                    "milestone_key": row["milestone_key"],
+                    "post_text": row["post_text"],
+                    "user_data": json.loads(row["user_data"]),
+                    "generated_at": row["generated_at"],
+                    "copy_count": row["copy_count"],
+                    "last_copied_at": row["last_copied_at"],
+                }
+        except (sqlite3.Error, json.JSONDecodeError):
+            pass
+    # memory fallback
+    for post in state["linkedin_posts"]:
+        if post["milestone_key"] == milestone_key and post.get("user_id", 1) == user_id:
+            return dict(post)
+    return None
+
+
+def load_linkedin_posts(user_id: int = 1) -> list[dict]:
+    """Return all generated LinkedIn posts, newest first."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, trigger, milestone_key, post_text, user_data,"
+                    "       generated_at, copy_count, last_copied_at"
+                    " FROM linkedin_posts WHERE user_id = ?"
+                    " ORDER BY generated_at DESC",
+                    (user_id,),
+                ).fetchall()
+            results = []
+            for row in rows:
+                try:
+                    results.append(
+                        {
+                            "id": row["id"],
+                            "trigger": row["trigger"],
+                            "milestone_key": row["milestone_key"],
+                            "post_text": row["post_text"],
+                            "user_data": json.loads(row["user_data"]),
+                            "generated_at": row["generated_at"],
+                            "copy_count": row["copy_count"],
+                            "last_copied_at": row["last_copied_at"],
+                        }
+                    )
+                except json.JSONDecodeError:
+                    continue
+            return results
+        except sqlite3.Error:
+            pass
+    posts = [dict(p) for p in state["linkedin_posts"] if p.get("user_id", 1) == user_id]
+    return sorted(posts, key=lambda p: p.get("generated_at", ""), reverse=True)
+
+
+def record_linkedin_copy(post_id: int, user_id: int = 1) -> int:
+    """Increment copy_count for a post. Returns new total copies across ALL posts."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    now = datetime.now().isoformat()
+    # Update memory
+    for post in state["linkedin_posts"]:
+        if post.get("id") == post_id:
+            post["copy_count"] = post.get("copy_count", 0) + 1
+            post["last_copied_at"] = now
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                conn.execute(
+                    "UPDATE linkedin_posts SET copy_count = copy_count + 1,"
+                    " last_copied_at = ? WHERE id = ?",
+                    (now, post_id),
+                )
+        except (sqlite3.Error, OSError):
+            pass
+    return get_linkedin_total_copies(user_id)
+
+
+def get_linkedin_total_copies(user_id: int = 1) -> int:
+    """Return the total number of times any LinkedIn post was copied."""
+    ensure_storage()
+    state = _ensure_memory_defaults()
+    if is_file_persistence_enabled():
+        try:
+            with _db_connection() as conn:
+                row = conn.execute(
+                    "SELECT COALESCE(SUM(copy_count), 0) AS total"
+                    " FROM linkedin_posts WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+            return int(row["total"]) if row else 0
+        except sqlite3.Error:
+            pass
+    return sum(p.get("copy_count", 0) for p in state["linkedin_posts"])

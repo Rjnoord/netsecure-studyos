@@ -5,7 +5,18 @@ from datetime import datetime
 import streamlit as st
 
 from labs import get_home_labs, grade_lab_with_ai, lab_note_feedback
-from storage import add_xp, award_badge, get_badges, load_user_profile, save_user_profile
+from linkedin import TRIGGER_LABELS, generate_linkedin_post, get_next_peak_time
+from storage import (
+    add_xp,
+    award_badge,
+    get_badges,
+    get_linkedin_post_for_milestone,
+    get_linkedin_total_copies,
+    load_user_profile,
+    record_linkedin_copy,
+    save_linkedin_post,
+    save_user_profile,
+)
 from utils import render_section_note, render_topic_card
 
 
@@ -93,6 +104,119 @@ def _render_ai_grade(grade: dict) -> None:
     if bullets:
         st.markdown("**AI-Personalized Resume Bullets** *(copy-paste ready)*")
         st.code("\n".join(f"• {b}" for b in bullets), language=None)
+
+
+def _render_linkedin_section(
+    lab: dict,
+    existing_grade: dict,
+    selected_exam: str,
+    profile: dict,
+) -> None:
+    """Render the 📣 Share Your Win LinkedIn section after a graded lab."""
+    score = int(existing_grade.get("score", 0))
+    if score < 7:
+        return
+
+    # Respect opt-out preference
+    if st.session_state.get("linkedin_suggestions_disabled"):
+        return
+
+    milestone_key = f"lab_{lab['id']}"
+
+    # Auto-generate post once and cache in SQLite
+    saved_post = get_linkedin_post_for_milestone(milestone_key)
+    if saved_post is None:
+        ai_bullets = existing_grade.get("personalized_bullets") or lab.get("resume_bullets", [])
+        user_data = {
+            "user_name": profile.get("name", "I"),
+            "cert": selected_exam,
+            "lab_title": lab["title"],
+            "grade_score": score,
+            "bullets": ai_bullets[:2],
+        }
+        with st.spinner("Drafting your LinkedIn post..."):
+            post_text = generate_linkedin_post("lab_completed", user_data)
+        if post_text:
+            post_id = save_linkedin_post("lab_completed", milestone_key, post_text, user_data)
+            saved_post = {
+                "id": post_id,
+                "post_text": post_text,
+                "trigger": "lab_completed",
+                "generated_at": datetime.now().isoformat(),
+                "copy_count": 0,
+            }
+
+    if not saved_post:
+        return
+
+    post_id = saved_post.get("id")
+
+    st.markdown("---")
+    st.markdown("### 📣 Share Your Win")
+
+    # Peak time info
+    peak = get_next_peak_time()
+    if peak["is_now"]:
+        st.success(f"🕐 **Best time to post: Right now!** ({peak['day']} {peak['time_range']})")
+    else:
+        st.info(
+            f"🕐 **Best time to post:** {peak['label']} · {peak['day']} {peak['time_range']} "
+            f"({peak['date']})"
+        )
+
+    # Editable post text
+    edited_post = st.text_area(
+        "LinkedIn Post (edit before copying)",
+        value=saved_post["post_text"],
+        height=260,
+        key=f"li_post_{lab['id']}",
+        help="Customize this post before sharing. Changes here are not saved.",
+    )
+
+    copy_col, opt_col = st.columns([2, 1])
+    with copy_col:
+        copy_xp_key = f"li_copy_xp_{lab['id']}"
+        if not st.session_state.get(copy_xp_key):
+            if st.button(
+                "✅ Mark as Copied (+50 XP)",
+                key=f"li_copy_btn_{lab['id']}",
+                use_container_width=True,
+                type="primary",
+            ):
+                if post_id is not None:
+                    total_copies = record_linkedin_copy(post_id)
+                else:
+                    total_copies = get_linkedin_total_copies()
+                add_xp(50, "LinkedIn post copied")
+                st.session_state[copy_xp_key] = True
+                st.success("+ 50 XP! Open LinkedIn, paste, and post 🚀")
+                if total_copies >= 10:
+                    if award_badge(
+                        "linkedin_legend",
+                        "LinkedIn Legend",
+                        "Shared 10 posts about your learning journey on LinkedIn",
+                    ):
+                        st.success("🏅 Badge unlocked: **LinkedIn Legend**")
+                st.rerun()
+        else:
+            st.success("Copied! Go post on LinkedIn 🚀")
+            copy_count = saved_post.get("copy_count", 0) + (
+                1 if st.session_state.get(copy_xp_key) else 0
+            )
+            total = get_linkedin_total_copies()
+            st.caption(f"LinkedIn Legend progress: {min(total, 10)}/10 posts")
+
+    with opt_col:
+        if st.checkbox(
+            "Don't show LinkedIn suggestions",
+            key="linkedin_suggestions_disabled",
+            value=st.session_state.get("linkedin_suggestions_disabled", False),
+        ):
+            st.rerun()
+
+    # Raw text for manual copy-paste
+    with st.expander("Copy raw post text", expanded=False):
+        st.code(edited_post, language=None)
 
 
 def render(ctx: dict) -> None:
@@ -241,6 +365,8 @@ def render(ctx: dict) -> None:
         # AI grade panel — shown for complete labs that have a stored grade
         if is_complete and existing_grade:
             _render_ai_grade(existing_grade)
+            # LinkedIn "Share Your Win" section for grades 7+
+            _render_linkedin_section(lab, existing_grade, selected_exam, profile)
 
         st.markdown("### Resume Bullets")
         if is_complete:

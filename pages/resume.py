@@ -5,19 +5,25 @@ from datetime import datetime
 import streamlit as st
 
 from labs import HOME_LABS, get_home_labs
+from linkedin import TRIGGER_LABELS, generate_linkedin_post, get_next_peak_time
 from storage import (
     add_xp,
     award_badge,
     export_markdown,
     get_badges,
+    get_linkedin_post_for_milestone,
+    get_linkedin_total_copies,
+    load_linkedin_posts,
     load_resume,
+    record_linkedin_copy,
+    save_linkedin_post,
     save_resume,
 )
 from utils import render_section_note
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Constants
 # ---------------------------------------------------------------------------
 
 _JOB_TITLES = [
@@ -33,8 +39,11 @@ _JOB_TITLES = [
 _YEARS_OPTIONS = ["0-1", "1-3", "3-5", "5+"]
 
 
+# ---------------------------------------------------------------------------
+# Data helpers
+# ---------------------------------------------------------------------------
+
 def _get_lab_def(exam: str, lab_id: str) -> dict | None:
-    """Look up a lab definition by exam and lab_id from HOME_LABS."""
     for lab in HOME_LABS.get(exam, []):
         if lab["id"] == lab_id:
             return lab
@@ -42,7 +51,6 @@ def _get_lab_def(exam: str, lab_id: str) -> dict | None:
 
 
 def _collect_completed_labs(profile: dict) -> list[dict]:
-    """Return list of completed lab dicts with bullets (AI-personalized or static fallback)."""
     completed = []
     for exam, labs in profile.get("lab_progress", {}).items():
         for lab_id, lab_data in labs.items():
@@ -70,7 +78,6 @@ def _collect_completed_labs(profile: dict) -> list[dict]:
 
 
 def _collect_qualifying_certs(profile: dict, threshold: float = 40.0) -> dict[str, float]:
-    """Return cert -> readiness mapping for certs above threshold, sorted descending."""
     readiness = profile.get("exam_readiness", {})
     qualifying = {cert: score for cert, score in readiness.items() if score > threshold}
     return dict(sorted(qualifying.items(), key=lambda x: x[1], reverse=True))
@@ -82,6 +89,10 @@ def _count_completed_labs(profile: dict) -> int:
         total += sum(1 for lab in labs.values() if lab.get("completed"))
     return total
 
+
+# ---------------------------------------------------------------------------
+# Resume generation (Claude API, streaming)
+# ---------------------------------------------------------------------------
 
 def _generate_resume(
     user_name: str,
@@ -95,13 +106,11 @@ def _generate_resume(
     qualifying_certs: dict[str, float],
     profile: dict,
 ) -> str | None:
-    """Call Claude Sonnet to generate an ATS-optimised resume. Returns markdown string or None."""
     try:
         import anthropic
 
         client = anthropic.Anthropic()
 
-        # Build labs section for prompt
         if completed_labs:
             labs_lines = []
             for lab in completed_labs:
@@ -118,7 +127,6 @@ def _generate_resume(
         else:
             labs_text = "No completed labs yet."
 
-        # Build certs section for prompt
         if qualifying_certs:
             certs_lines = [
                 f"- {cert}: {score:.0f}% readiness"
@@ -128,7 +136,6 @@ def _generate_resume(
         else:
             certs_text = "No certifications tracked yet."
 
-        # Collect all domain names studied across all exams for Technical Skills
         domain_ratings = profile.get("domain_self_ratings", {})
         all_domains: set[str] = set()
         for exam_domains in domain_ratings.values():
@@ -179,7 +186,6 @@ REQUIREMENTS:
 - The tone should be confident and professional
 """
 
-        # Stream for live preview
         result_text = ""
         with client.messages.stream(
             model="claude-sonnet-4-6",
@@ -208,6 +214,105 @@ REQUIREMENTS:
 
 
 # ---------------------------------------------------------------------------
+# LinkedIn helpers
+# ---------------------------------------------------------------------------
+
+def _render_linkedin_copy_controls(post_id: int | None, session_key: str) -> None:
+    """Shared copy-button + XP logic for a LinkedIn post."""
+    copy_xp_key = f"li_copy_xp_{session_key}"
+    col_btn, col_prog = st.columns([2, 1])
+    with col_btn:
+        if not st.session_state.get(copy_xp_key):
+            if st.button(
+                "✅ Mark as Copied (+50 XP)",
+                key=f"li_copy_btn_{session_key}",
+                use_container_width=True,
+                type="primary",
+            ):
+                if post_id is not None:
+                    total_copies = record_linkedin_copy(post_id)
+                else:
+                    total_copies = get_linkedin_total_copies()
+                add_xp(50, "LinkedIn post copied")
+                st.session_state[copy_xp_key] = True
+                st.success("+ 50 XP! Go paste it on LinkedIn 🚀")
+                if total_copies >= 10:
+                    if award_badge(
+                        "linkedin_legend",
+                        "LinkedIn Legend",
+                        "Shared 10 posts about your learning journey on LinkedIn",
+                    ):
+                        st.success("🏅 Badge unlocked: **LinkedIn Legend**")
+                st.rerun()
+        else:
+            st.success("Copied! Go post it 🚀")
+    with col_prog:
+        total = get_linkedin_total_copies()
+        st.caption(f"LinkedIn Legend: {min(total, 10)}/10 posts")
+
+
+def _render_linkedin_announce(
+    profile: dict,
+    completed_labs: list[dict],
+    qualifying_certs: dict[str, float],
+    saved_inputs: dict,
+) -> None:
+    """📣 Announce Your Progress — LinkedIn post for resume generation trigger."""
+    milestone_key = "resume_first_gen"
+    saved_post = get_linkedin_post_for_milestone(milestone_key)
+
+    if saved_post is None:
+        user_data = {
+            "user_name": saved_inputs.get("user_name") or profile.get("name", "I"),
+            "cert": profile.get("target_exam", "my certification"),
+            "labs_count": len(completed_labs),
+            "certs_count": len(qualifying_certs),
+            "job_title": saved_inputs.get("job_title", "a tech role"),
+        }
+        with st.spinner("Drafting your LinkedIn announcement..."):
+            post_text = generate_linkedin_post("resume_generated", user_data)
+        if post_text:
+            post_id = save_linkedin_post("resume_generated", milestone_key, post_text, user_data)
+            saved_post = {
+                "id": post_id,
+                "post_text": post_text,
+                "trigger": "resume_generated",
+                "generated_at": datetime.now().isoformat(),
+                "copy_count": 0,
+            }
+
+    if not saved_post:
+        return
+
+    post_id = saved_post.get("id")
+
+    st.divider()
+    st.markdown("### 📣 Announce Your Progress on LinkedIn")
+
+    peak = get_next_peak_time()
+    if peak["is_now"]:
+        st.success(f"🕐 **Best time to post: Right now!** ({peak['day']} {peak['time_range']})")
+    else:
+        st.info(
+            f"🕐 **Best time to post:** {peak['label']} · {peak['day']} {peak['time_range']} "
+            f"({peak['date']})"
+        )
+
+    edited = st.text_area(
+        "LinkedIn Post (edit before copying)",
+        value=saved_post["post_text"],
+        height=260,
+        key="li_resume_post",
+        help="Customize before sharing. Changes here are not persisted.",
+    )
+
+    _render_linkedin_copy_controls(post_id, "resume_gen")
+
+    with st.expander("Copy raw post text", expanded=False):
+        st.code(edited, language=None)
+
+
+# ---------------------------------------------------------------------------
 # Main render
 # ---------------------------------------------------------------------------
 
@@ -221,7 +326,7 @@ def render(ctx: dict) -> None:
         "static fallback bullets are used for ungraded labs."
     )
 
-    # ── Detect new labs completed since last generation ──────────────────
+    # ── Detect new labs completed since last generation ───────────────────
     current_lab_count = _count_completed_labs(profile)
     last_gen_lab_count = st.session_state.get("resume_last_lab_count")
     if last_gen_lab_count is not None and current_lab_count > last_gen_lab_count:
@@ -261,7 +366,6 @@ def render(ctx: dict) -> None:
     # ── User input form ───────────────────────────────────────────────────
     st.markdown("### Your Information")
 
-    # Load saved inputs to pre-populate form
     saved = load_resume()
     saved_inputs = saved.get("user_inputs", {}) if saved else {}
 
@@ -354,7 +458,6 @@ def render(ctx: dict) -> None:
                 # ── XP and badge rewards ──────────────────────────────────
                 existing_badge_ids = {b["badge_id"] for b in get_badges()}
 
-                # +200 XP on first-ever generation
                 if "resume_first_gen" not in existing_badge_ids:
                     if award_badge(
                         "resume_first_gen",
@@ -364,7 +467,6 @@ def render(ctx: dict) -> None:
                         add_xp(200, "First resume generated")
                         st.success("🏅 Badge unlocked: **Resume Ready** (+200 XP)")
 
-                # Resume Ready badge (if earned via lab path, no-op; else award here)
                 if "resume_ready" not in existing_badge_ids:
                     if award_badge(
                         "resume_ready",
@@ -394,35 +496,21 @@ def render(ctx: dict) -> None:
 
         # ── Action buttons ────────────────────────────────────────────────
         btn_col1, btn_col2 = st.columns(2)
-
         with btn_col1:
-            # Build filename: resume_JaneSmith_2026-03-22.md
             safe_name = (
                 saved_inputs.get("user_name")
                 or (saved or {}).get("user_inputs", {}).get("user_name", "resume")
             ).replace(" ", "")
             today_str = datetime.now().strftime("%Y-%m-%d")
             filename = f"resume_{safe_name}_{today_str}.md"
-
-            # Save to data/exports/ and offer download
-            export_path = export_markdown(resume_md, filename)
-            if export_path:
-                st.download_button(
-                    label="Download Resume (.md)",
-                    data=resume_md,
-                    file_name=filename,
-                    mime="text/markdown",
-                    use_container_width=True,
-                )
-            else:
-                st.download_button(
-                    label="Download Resume (.md)",
-                    data=resume_md,
-                    file_name=filename,
-                    mime="text/markdown",
-                    use_container_width=True,
-                )
-
+            export_markdown(resume_md, filename)
+            st.download_button(
+                label="Download Resume (.md)",
+                data=resume_md,
+                file_name=filename,
+                mime="text/markdown",
+                use_container_width=True,
+            )
         with btn_col2:
             st.info("Use the **Copy** button in the raw text panel below to paste into job portals.", icon="📋")
 
@@ -444,5 +532,58 @@ def render(ctx: dict) -> None:
             )
             st.code(resume_md, language=None)
 
+        # ── LinkedIn announcement section ─────────────────────────────────
+        current_saved_inputs = saved_inputs or (saved or {}).get("user_inputs", {})
+        if not st.session_state.get("linkedin_suggestions_disabled"):
+            _render_linkedin_announce(
+                profile=profile,
+                completed_labs=completed_labs,
+                qualifying_certs=qualifying_certs,
+                saved_inputs=current_saved_inputs,
+            )
+
     elif not generate_btn:
         st.info("Fill in your information above and click **Generate Resume** to create your AI-powered resume.")
+
+    # ── LinkedIn Posts history ────────────────────────────────────────────
+    all_posts = load_linkedin_posts()
+    if all_posts:
+        st.divider()
+        st.markdown("### 📋 LinkedIn Posts History")
+        render_section_note(
+            "Every LinkedIn post generated across your labs and resume milestones is saved here. "
+            "Copy any post and mark it as copied to earn +50 XP per post."
+        )
+
+        total_copies = get_linkedin_total_copies()
+        st.caption(f"LinkedIn Legend progress: {min(total_copies, 10)}/10 posts copied")
+
+        for post in all_posts:
+            trigger_label = TRIGGER_LABELS.get(post["trigger"], post["trigger"])
+            try:
+                gen_dt = datetime.fromisoformat(post["generated_at"])
+                date_str = gen_dt.strftime("%b %d, %Y %I:%M %p")
+            except ValueError:
+                date_str = post["generated_at"]
+
+            copy_count = post.get("copy_count", 0)
+            copy_label = f"Copied {copy_count}×" if copy_count else "Not copied yet"
+
+            with st.expander(
+                f"**{trigger_label}** · {date_str} · {copy_label}",
+                expanded=False,
+            ):
+                session_key = f"hist_{post['id']}"
+                copy_xp_key = f"li_copy_xp_{session_key}"
+
+                edited = st.text_area(
+                    "Post text (editable)",
+                    value=post["post_text"],
+                    height=220,
+                    key=f"li_hist_text_{post['id']}",
+                )
+
+                _render_linkedin_copy_controls(post.get("id"), session_key)
+
+                with st.expander("Copy raw text", expanded=False):
+                    st.code(edited, language=None)
