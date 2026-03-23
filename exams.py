@@ -82,6 +82,13 @@ EXAM_DOMAINS = {
         "DC Compute",
         "DC Storage Networking",
     ],
+    "Cisco DevNet Associate": [
+        "Software Development and Design",
+        "Understanding and Using APIs",
+        "Cisco Platforms and Development",
+        "Application Deployment and Security",
+        "Infrastructure and Automation",
+    ],
 }
 for exam, domains in catalog_domains().items():
     EXAM_DOMAINS.setdefault(exam, domains)
